@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>위생배관 관경 계산서</title>
+<style>
+:root {
+  --bg:#0f1117; --surface:#1a1d27; --surface2:#22263a; --surface3:#2a2f47;
+  --border:#2e3350; --accent:#4f8ef7; --hot:#e05c8a; --drain:#a07cf7;
+  --red:#e05c5c; --accent2:#38c9a0; --warn:#f7a64f; --text:#e8ecf4; --text2:#8892aa;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font:14px/1.5 'Malgun Gothic','Apple SD Gothic Neo',sans-serif;min-height:100vh}
+header{position:sticky;top:0;z-index:100;background:var(--surface);border-bottom:1px solid var(--border);padding:0 16px;display:flex;align-items:center;gap:12px;height:52px}
+.logo{color:var(--accent);font-weight:700;font-size:15px;white-space:nowrap}
+#projectName{background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:5px 10px;border-radius:6px;font-size:13px;width:200px;font-family:inherit}
+#projectName:focus{outline:none;border-color:var(--accent)}
+.hbtns{margin-left:auto;display:flex;gap:8px}
+.tabs-bar{display:flex;border-bottom:1px solid var(--border);background:var(--surface);overflow-x:auto;padding:0 16px}
+.tab-btn{padding:12px 20px;cursor:pointer;color:var(--text2);border:none;border-bottom:2px solid transparent;font-size:13px;white-space:nowrap;transition:all .15s;background:none;font-family:inherit}
+.tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
+.tab-btn:hover:not(.active){color:var(--text)}
+.tab-pane{display:none;height:calc(100vh - 104px)}
+.tab-pane.active{display:flex}
+.btn{padding:6px 14px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-family:inherit;transition:opacity .15s;white-space:nowrap}
+.btn:hover{opacity:.82}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-danger{background:var(--red);color:#fff}
+.btn-success{background:var(--accent2);color:#0f1117}
+.btn-ghost{background:transparent;color:var(--text2);border:1px solid var(--border)}
+.btn-sm{padding:3px 8px;font-size:11px}
+.badge{display:inline-block;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600}
+.badge-cw{background:rgba(79,142,247,.15);border:1px solid rgba(79,142,247,.4);color:var(--accent)}
+.badge-hw{background:rgba(224,92,138,.15);border:1px solid rgba(224,92,138,.4);color:var(--hot)}
+.badge-sew{background:rgba(224,92,92,.15);border:1px solid rgba(224,92,92,.4);color:var(--red)}
+.badge-wst{background:rgba(160,124,247,.15);border:1px solid rgba(160,124,247,.4);color:var(--drain)}
+.badge-na{background:rgba(136,146,170,.1);border:1px solid rgba(136,146,170,.2);color:var(--text2)}
+.sidebar{width:220px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);overflow-y:auto;display:flex;flex-direction:column}
+.sidebar-hdr{padding:10px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.sidebar-title{font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px}
+.zone-card{padding:10px 12px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s;position:relative}
+.zone-card:hover{background:var(--surface2)}
+.zone-card.active{background:var(--surface2);border-left:3px solid var(--accent)}
+.zone-card-name{font-size:13px;font-weight:600;margin-bottom:3px}
+.zone-card-floor{font-size:11px;color:var(--text2);margin-bottom:6px}
+.zone-card-fx{font-size:10px;color:var(--text2);margin-bottom:5px;line-height:1.4}
+.zone-card-badges{display:flex;gap:4px;flex-wrap:wrap}
+.zone-card-del{position:absolute;top:8px;right:8px;background:none;border:none;color:var(--text2);cursor:pointer;font-size:14px;padding:2px;opacity:0;transition:opacity .15s}
+.zone-card:hover .zone-card-del{opacity:1}
+.zone-card-del:hover{color:var(--red)}
+.main-panel{flex:1;overflow-y:auto;padding:16px}
+.zone-editor-top{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 16px;margin-bottom:12px}
+.zone-editor-row{display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap}
+.zone-name-inp{background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:15px;font-weight:700;font-family:inherit;width:200px}
+.zone-name-inp:focus{outline:none;border-color:var(--accent)}
+.zone-chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:5px 12px;font-size:12px;display:flex;align-items:center;gap:6px}
+.chip-lbl{color:var(--text2)}
+.chip-val{font-weight:600}
+.branch-node-box{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px}
+.branch-node-hdr{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.node-name-inp{background:transparent;border:none;border-bottom:1px solid var(--border);color:var(--text);font-size:13px;font-weight:600;font-family:inherit;padding:2px 4px;width:130px;outline:none}
+.node-name-inp:focus{border-bottom-color:var(--accent)}
+.node-badges{display:flex;gap:4px;flex-wrap:wrap;margin:6px 0}
+.fx-summary{font-size:11px;color:var(--text2);margin:4px 0 6px}
+.fixture-panel{background:var(--surface3);border:1px solid var(--border);border-radius:6px;padding:10px;margin-top:8px;display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:6px}
+.fx-row{display:flex;align-items:center;gap:6px}
+.fx-name{font-size:11px;color:var(--text2);flex:1}
+.fx-qty{width:52px;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:3px 6px;border-radius:4px;font-size:12px;text-align:center;font-family:inherit}
+.fx-qty:focus{outline:none;border-color:var(--accent)}
+.children-wrap{margin-left:24px;border-left:2px solid var(--border);padding-left:12px;margin-top:8px}
+.svg-wrap{background:var(--surface);border:1px solid var(--border);border-radius:8px;margin-top:12px;overflow:auto;padding:8px}
+.conn-layout{display:flex;width:100%;height:100%}
+.conn-sidebar{width:200px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);overflow-y:auto;padding:12px}
+.conn-main{flex:1;overflow-y:auto;padding:16px}
+.conn-zone-item{padding:8px;border-radius:6px;margin-bottom:4px}
+.group-card{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:8px}
+.group-hdr{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.group-name-inp{background:var(--surface);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:4px;font-size:13px;font-family:inherit;font-weight:600;width:150px}
+.group-name-inp:focus{outline:none;border-color:var(--accent)}
+.zone-check-list{display:flex;flex-direction:column;gap:4px}
+.zone-check-item{display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;padding:4px 6px;border-radius:4px;user-select:none}
+.zone-check-item:hover{background:var(--surface3)}
+.zone-check-item input[type=checkbox]{accent-color:var(--accent)}
+.section{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:12px}
+.section-title{font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;font-weight:700}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:var(--surface3);padding:8px 10px;text-align:left;color:var(--text2);font-weight:600;border-bottom:1px solid var(--border)}
+td{padding:7px 10px;border-bottom:1px solid var(--border)}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(255,255,255,.02)}
+.result-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:20px}
+.result-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;text-align:center}
+.result-card-title{font-size:12px;color:var(--text2);margin-bottom:10px}
+.result-pipe-big{font-size:38px;font-weight:700}
+.result-pipe-sub{font-size:13px;color:var(--text2);margin-top:4px}
+.result-pipe-pair{display:flex;gap:16px;justify-content:center}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:200;display:flex;align-items:center;justify-content:center}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;width:320px}
+.modal-title{font-size:15px;font-weight:700;margin-bottom:14px}
+.modal-inp{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:6px;font-size:14px;font-family:inherit;margin-bottom:12px}
+.modal-inp:focus{outline:none;border-color:var(--accent)}
+.modal-btns{display:flex;gap:8px;justify-content:flex-end}
+select{background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:4px;font-family:inherit;font-size:12px}
+select:focus{outline:none;border-color:var(--accent)}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+.empty{color:var(--text2);text-align:center;padding:40px 20px;font-size:13px}
+.fr{display:flex;align-items:center;gap:8px}
+.ml{margin-left:auto}
+.mb{margin-bottom:8px}
+@media print{
+  header,.tabs-bar{display:none!important}
+  .tab-pane{display:block!important;height:auto!important;page-break-after:always}
+  body{background:#fff;color:#000}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="logo">⊞ 위생배관 관경 계산서</span>
+  <input id="projectName" type="text" placeholder="프로젝트명 입력…">
+  <div class="hbtns">
+    <button class="btn btn-success" onclick="saveJSON()">💾 JSON 저장</button>
+    <label class="btn btn-ghost" style="cursor:pointer">📂 불러오기<input type="file" accept=".json" style="display:none" onchange="loadJSON(event)"></label>
+    <button class="btn btn-ghost" onclick="window.print()">🖨 PDF 저장</button>
+  </div>
+</header>
+
+<div class="tabs-bar">
+  <button class="tab-btn active" onclick="switchTab(0)">① Zone 편집</button>
+  <button class="tab-btn" onclick="switchTab(1)">② 급수/급탕 연결</button>
+  <button class="tab-btn" onclick="switchTab(2)">③ 오배수 연결</button>
+  <button class="tab-btn" onclick="switchTab(3)">④ 메인관 결과</button>
+</div>
+
+<div class="tab-pane active" id="tab0">
+  <div class="sidebar" id="zoneSidebar"></div>
+  <div class="main-panel" id="zoneEditor"></div>
+</div>
+<div class="tab-pane" id="tab1">
+  <div class="conn-layout">
+    <div class="conn-sidebar" id="cwZoneList"></div>
+    <div class="conn-main" id="cwMain"></div>
+  </div>
+</div>
+<div class="tab-pane" id="tab2">
+  <div class="conn-layout">
+    <div class="conn-sidebar" id="drZoneList"></div>
+    <div class="conn-main" id="drMain"></div>
+  </div>
+</div>
+<div class="tab-pane" id="tab3">
+  <div class="main-panel" id="resultPanel"></div>
+</div>
+
+<div id="modalOverlay" class="modal-overlay" style="display:none"></div>
+
+<script>
+// ── Constants ──────────────────────────────────────────────────────────────────
+const FLOORS = ['B2층','B1층','지하','1층','2층','3층','4층','5층','6층','RF층'];
+const FX_KEYS = ['wc_v','wc_t','ur_v','ur_t','bas_p','bas_i','shw','bath','sink','cls','fd','wsh'];
+const FX = {
+  wc_v:  {name:'대변기(세정밸브)', cwQ:15, conn:25, hot:false, dfu:6,  drain:'sew', dc:100},
+  wc_t:  {name:'대변기(세정탱크)', cwQ:12, conn:15, hot:false, dfu:6,  drain:'sew', dc:100},
+  ur_v:  {name:'소변기(세정밸브)', cwQ:8,  conn:20, hot:false, dfu:4,  drain:'sew', dc:75},
+  ur_t:  {name:'소변기(세정탱크)', cwQ:6,  conn:15, hot:false, dfu:4,  drain:'sew', dc:75},
+  bas_p: {name:'세면기(공중용)',   cwQ:8,  conn:15, hot:true,  dfu:1,  drain:'wst', dc:40},
+  bas_i: {name:'세면기(개인용)',   cwQ:6,  conn:15, hot:true,  dfu:1,  drain:'wst', dc:40},
+  shw:   {name:'샤워기',           cwQ:15, conn:15, hot:true,  dfu:2,  drain:'wst', dc:50},
+  bath:  {name:'욕조',             cwQ:30, conn:20, hot:true,  dfu:2,  drain:'wst', dc:40},
+  sink:  {name:'주방싱크',         cwQ:8,  conn:15, hot:true,  dfu:2,  drain:'wst', dc:50},
+  cls:   {name:'청소싱크',         cwQ:10, conn:20, hot:false, dfu:3,  drain:'wst', dc:75},
+  fd:    {name:'FD(배수구)',        cwQ:0,  conn:0,  hot:false, dfu:1,  drain:'wst', dc:50},
+  wsh:   {name:'세탁기',           cwQ:8,  conn:15, hot:false, dfu:2,  drain:'wst', dc:50},
+};
+
+// ── Pipe tables ────────────────────────────────────────────────────────────────
+function flowPipe(q){
+  if(q<=0)    return 0;
+  if(q<=6.7)  return 15;
+  if(q<=13.8) return 20;
+  if(q<=25.5) return 25;
+  if(q<=48)   return 32;
+  if(q<=69)   return 40;
+  if(q<=129)  return 50;
+  if(q<=232)  return 65;
+  if(q<=360)  return 80;
+  if(q<=700)  return 100;
+  if(q<=1200) return 125;
+  return 150;
+}
+function sewPipe(d){
+  if(d<=0)   return 0;
+  if(d<=160) return 100;
+  if(d<=360) return 125;
+  if(d<=620) return 150;
+  return 200;
+}
+function wstPipe(d){
+  if(d<=0)   return 0;
+  if(d<=6)   return 50;
+  if(d<=20)  return 75;
+  if(d<=160) return 100;
+  if(d<=360) return 125;
+  if(d<=620) return 150;
+  return 200;
+}
+function ps(p){ return p ? p+'A' : 'N/A' }
+
+// ── Calc ───────────────────────────────────────────────────────────────────────
+function calcNode(node){
+  let cwQ=0,hwQ=0,sewDFU=0,wstDFU=0;
+  let mCw=0,mHw=0,mSew=0,mWst=0;
+  const fx = node.fixtures||{};
+  for(const k of FX_KEYS){
+    const n=fx[k]||0; if(!n) continue;
+    const f=FX[k];
+    cwQ+=f.cwQ*n;
+    if(f.hot) hwQ+=f.cwQ*n;
+    if(f.drain==='sew'){sewDFU+=f.dfu*n; mSew=Math.max(mSew,f.dc);}
+    else               {wstDFU+=f.dfu*n; mWst=Math.max(mWst,f.dc);}
+    if(f.cwQ>0) mCw=Math.max(mCw,f.conn);
+    if(f.hot)   mHw=Math.max(mHw,f.conn);
+  }
+  const kids=(node.children||[]).map(c=>calcNode(c));
+  for(const c of kids){
+    cwQ+=c.cwQ; hwQ+=c.hwQ; sewDFU+=c.sewDFU; wstDFU+=c.wstDFU;
+    mCw=Math.max(mCw,c.cwPipe); mHw=Math.max(mHw,c.hwPipe);
+    mSew=Math.max(mSew,c.sewPipe); mWst=Math.max(mWst,c.wstPipe);
+  }
+  return {
+    cwQ, hwQ, sewDFU, wstDFU, kids, node,
+    cwPipe:  cwQ>0  ? Math.max(flowPipe(cwQ), mCw)          : 0,
+    hwPipe:  hwQ>0  ? Math.max(flowPipe(hwQ), mHw)          : 0,
+    sewPipe: sewDFU>0? Math.max(sewPipe(sewDFU), mSew, 100) : 0,
+    wstPipe: wstDFU>0? Math.max(wstPipe(wstDFU),mWst, 50)  : 0,
+  };
+}
+function calcZone(z){ return calcNode(z.tree); }
+
+function zoneFxTotals(tree){
+  const t={}; FX_KEYS.forEach(k=>t[k]=0);
+  function walk(n){for(const k of FX_KEYS)t[k]+=((n.fixtures||{})[k]||0);for(const c of n.children||[])walk(c);}
+  walk(tree); return t;
+}
+function zoneFxSummaryCard(tree){
+  const t=zoneFxTotals(tree);
+  const groups=[
+    {lbl:'대변기', keys:['wc_v','wc_t']},
+    {lbl:'소변기', keys:['ur_v','ur_t']},
+    {lbl:'세면기', keys:['bas_p','bas_i']},
+    {lbl:'샤워기', keys:['shw']},
+    {lbl:'욕조',   keys:['bath']},
+    {lbl:'주방싱크',keys:['sink']},
+    {lbl:'청소싱크',keys:['cls']},
+    {lbl:'FD',     keys:['fd']},
+    {lbl:'세탁기', keys:['wsh']},
+  ];
+  return groups.map(g=>{const n=g.keys.reduce((s,k)=>s+(t[k]||0),0);return n?g.lbl+' '+n:'';}).filter(Boolean).join(' · ')||null;
+}
+function sewSimult(cnt){
+  if(cnt<=2)  return 1.0;
+  if(cnt<=5)  return 0.8;
+  if(cnt<=10) return 0.7;
+  if(cnt<=20) return 0.6;
+  if(cnt<=30) return 0.55;
+  return 0.5;
+}
+function wstSimult(cnt){
+  if(cnt<=3)  return 1.0;
+  if(cnt<=6)  return 0.8;
+  if(cnt<=10) return 0.7;
+  if(cnt<=20) return 0.65;
+  return 0.6;
+}
+
+function calcCWGroup(g){
+  const zs=g.zoneIds.map(id=>S.zones.find(z=>z.id===id)).filter(Boolean);
+  let cwQ=0,hwQ=0;
+  for(const z of zs){const r=calcZone(z);cwQ+=r.cwQ;hwQ+=r.hwQ;}
+  if(zs.length>=2){cwQ*=0.9;hwQ*=0.9;}
+  return {cwQ,hwQ,cwPipe:flowPipe(cwQ),hwPipe:flowPipe(hwQ),cnt:zs.length};
+}
+function calcDRGroup(g){
+  const zs=g.zoneIds.map(id=>S.zones.find(z=>z.id===id)).filter(Boolean);
+  let sD=0,wD=0,sewCnt=0,wstCnt=0;
+  for(const z of zs){
+    const r=calcZone(z); sD+=r.sewDFU; wD+=r.wstDFU;
+    const t=zoneFxTotals(z.tree);
+    for(const k of FX_KEYS){
+      if(FX[k].drain==='sew') sewCnt+=t[k]||0;
+      else                    wstCnt+=t[k]||0;
+    }
+  }
+  const sf=sewSimult(sewCnt), wf=wstSimult(wstCnt);
+  const sDe=sD*sf, wDe=wD*wf;
+  return {
+    sewDFU:sDe, wstDFU:wDe,
+    sewPipe:sDe>0?Math.max(sewPipe(sDe),100):0,
+    wstPipe:wDe>0?Math.max(wstPipe(wDe),50):0,
+    cnt:zs.length, sewSimult:sf, wstSimult:wf,
+  };
+}
+function assignedIds(groups){ const s=new Set(); for(const g of groups) for(const id of g.zoneIds) s.add(id); return s; }
+
+function calcCWMain(){
+  let cwQ=0,hwQ=0;
+  const gs=S.cw.groups;
+  if(gs.length){
+    for(const g of gs){const r=calcCWGroup(g);cwQ+=r.cwQ;hwQ+=r.hwQ;}
+    const aid=assignedIds(gs);
+    for(const z of S.zones) if(!aid.has(z.id)){const r=calcZone(z);cwQ+=r.cwQ;hwQ+=r.hwQ;}
+  } else {
+    for(const z of S.zones){const r=calcZone(z);cwQ+=r.cwQ;hwQ+=r.hwQ;}
+  }
+  cwQ*=0.85; hwQ*=0.85;
+  return {cwQ,hwQ,cwPipe:flowPipe(cwQ),hwPipe:flowPipe(hwQ)};
+}
+function calcDRMain(){
+  let sD=0,wD=0;
+  const gs=S.dr.groups;
+  if(gs.length){
+    for(const g of gs){const r=calcDRGroup(g);sD+=r.sewDFU;wD+=r.wstDFU;}
+    const aid=assignedIds(gs);
+    for(const z of S.zones) if(!aid.has(z.id)){const r=calcZone(z);sD+=r.sewDFU;wD+=r.wstDFU;}
+  } else {
+    for(const z of S.zones){const r=calcZone(z);sD+=r.sewDFU;wD+=r.wstDFU;}
+  }
+  sD*=0.85; wD*=0.85;
+  return {sewDFU:sD,wstDFU:wD,sewPipe:sD>0?Math.max(sewPipe(sD),100):0,wstPipe:wD>0?Math.max(wstPipe(wD),50):0};
+}
+
+// ── State ──────────────────────────────────────────────────────────────────────
+let _id=1;
+const uid=()=>'n'+(++_id);
+const newFx=()=>Object.fromEntries(FX_KEYS.map(k=>[k,0]));
+const newNode=(name='분기')=>({id:uid(),name,fixtures:newFx(),children:[]});
+const newZone=(name,floor='1층')=>({id:uid(),name:name||'Zone 1',floor,tree:newNode('분기 A')});
+
+const S={projectName:'새 프로젝트',zones:[],cw:{groups:[],sgs:[]},dr:{groups:[],sgs:[]}};
+let activeZone=null, activeTab=0;
+
+function findZone(id){return S.zones.find(z=>z.id===id)}
+function findNode(tree,id){
+  if(tree.id===id) return tree;
+  for(const c of tree.children||[]){const r=findNode(c,id);if(r) return r;}
+  return null;
+}
+function findParent(tree,id,par=null){
+  if(tree.id===id) return par;
+  for(const c of tree.children||[]){
+    const r=findParent(c,id,tree);
+    if(r!==undefined) return r;
+  }
+  return undefined;
+}
+function fxSummary(fx){
+  const p=[];
+  for(const k of FX_KEYS) if(fx[k]) p.push(FX[k].name+' '+fx[k]+'개');
+  return p.length?p.join(' · '):'기구 없음';
+}
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+
+// ── Tab switch ─────────────────────────────────────────────────────────────────
+function switchTab(i){
+  activeTab=i;
+  document.querySelectorAll('.tab-btn').forEach((b,j)=>b.classList.toggle('active',i===j));
+  document.querySelectorAll('.tab-pane').forEach((p,j)=>p.classList.toggle('active',i===j));
+  renderTab(i);
+}
+function renderTab(i){
+  if(i===0){renderSidebar();renderEditor();}
+  if(i===1){renderCWTab();}
+  if(i===2){renderDRTab();}
+  if(i===3){renderResult();}
+}
+function renderAll(){renderTab(activeTab);}
+
+// ── Tab 1 render ───────────────────────────────────────────────────────────────
+function renderSidebar(){
+  const el=document.getElementById('zoneSidebar');
+  let h=`<div class="sidebar-hdr"><span class="sidebar-title">Zone 목록</span>
+    <button class="btn btn-primary btn-sm" onclick="addZone()">+ 추가</button></div>`;
+  if(!S.zones.length){h+=`<div class="empty">Zone을 추가하세요</div>`;}
+  else for(const z of S.zones){
+    const r=calcZone(z),ac=z.id===activeZone;
+    h+=`<div class="zone-card${ac?' active':''}" onclick="selZone('${z.id}')">
+      <button class="zone-card-del" onclick="event.stopPropagation();delZone('${z.id}')">✕</button>
+      <div class="zone-card-name">${esc(z.name)}</div>
+      <div class="zone-card-floor">${z.floor}</div>
+      ${(s=>s?`<div class="zone-card-fx">${esc(s)}</div>`:``)(zoneFxSummaryCard(z.tree))}
+      <div class="zone-card-badges">
+        <span class="badge ${r.cwPipe?'badge-cw':'badge-na'}">${ps(r.cwPipe)}</span>
+        <span class="badge ${r.hwPipe?'badge-hw':'badge-na'}">${ps(r.hwPipe)}</span>
+        <span class="badge ${r.sewPipe?'badge-sew':'badge-na'}">${ps(r.sewPipe)}</span>
+        <span class="badge ${r.wstPipe?'badge-wst':'badge-na'}">${ps(r.wstPipe)}</span>
+      </div></div>`;
+  }
+  el.innerHTML=h;
+}
+
+function renderEditor(){
+  const el=document.getElementById('zoneEditor');
+  if(!S.zones.length){el.innerHTML=`<div class="empty">좌측에서 Zone을 추가하고 선택하세요.</div>`;return;}
+  const zone=findZone(activeZone)||S.zones[0];
+  if(!activeZone) activeZone=zone.id;
+  const r=calcZone(zone);
+  let h=`<div class="zone-editor-top">
+    <div class="zone-editor-row">
+      <input class="zone-name-inp" value="${esc(zone.name)}" onchange="setZoneName('${zone.id}',this.value)" placeholder="Zone 이름">
+      <select onchange="setZoneFloor('${zone.id}',this.value)">${FLOORS.map(f=>`<option${f===zone.floor?' selected':''}>${f}</option>`).join('')}</select>
+    </div>
+    <div class="zone-chips" id="zone-chips-${zone.id}">
+      ${chipsHTML(r)}
+    </div></div>`;
+  h+=`<div>${nodeHTML(zone.tree,r,true)}</div>`;
+  h+=svgSection(zone.tree,r);
+  el.innerHTML=h;
+}
+
+function chipsHTML(r){
+  return `<div class="chip"><span class="chip-lbl">급수</span><span class="chip-val" style="color:var(--accent)">${ps(r.cwPipe)}</span><span class="chip-lbl">${r.cwQ.toFixed(1)} L/min</span></div>
+  <div class="chip"><span class="chip-lbl">급탕</span><span class="chip-val" style="color:var(--hot)">${ps(r.hwPipe)}</span><span class="chip-lbl">${r.hwQ.toFixed(1)} L/min</span></div>
+  <div class="chip"><span class="chip-lbl">오수관</span><span class="chip-val" style="color:var(--red)">${ps(r.sewPipe)}</span><span class="chip-lbl">${r.sewDFU} DFU</span></div>
+  <div class="chip"><span class="chip-lbl">배수관</span><span class="chip-val" style="color:var(--drain)">${ps(r.wstPipe)}</span><span class="chip-lbl">${r.wstDFU} DFU</span></div>`;
+}
+
+function nodeBadgesHTML(c){
+  return `<span class="badge ${c.cwPipe?'badge-cw':'badge-na'}">${ps(c.cwPipe)}</span>
+  <span class="badge ${c.hwPipe?'badge-hw':'badge-na'}">${ps(c.hwPipe)}</span>
+  <span class="badge ${c.sewPipe?'badge-sew':'badge-na'}">${ps(c.sewPipe)}</span>
+  <span class="badge ${c.wstPipe?'badge-wst':'badge-na'}">${ps(c.wstPipe)}</span>
+  <span class="badge badge-na" style="color:var(--text)">${c.cwQ.toFixed(1)}L·${c.sewDFU+c.wstDFU}DFU</span>`;
+}
+
+function nodeHTML(node,calc,isRoot=false){
+  const bc=isRoot?'var(--accent2)':'var(--border)';
+  const bg=isRoot?'var(--surface2)':'var(--surface3)';
+  let h=`<div class="branch-node-box" id="nd_${node.id}" style="background:${bg};border-color:${bc}">
+    <div class="branch-node-hdr">
+      <input class="node-name-inp" value="${esc(node.name)}" onchange="setNodeName('${node.id}',this.value)">
+      <div class="node-badges" id="nb_${node.id}">${nodeBadgesHTML(calc)}</div>
+      <div class="fr" style="margin-left:auto;gap:4px">
+        <button class="btn btn-ghost btn-sm" onclick="toggleFP('${node.id}')">기구 입력</button>
+        <button class="btn btn-success btn-sm" onclick="addChild('${node.id}')">+ 하위 분기</button>
+        ${!isRoot?`<button class="btn btn-danger btn-sm" onclick="delNode('${node.id}')">삭제</button>`:''}
+      </div>
+    </div>
+    <div class="fx-summary" id="fxs_${node.id}">${fxSummary(node.fixtures)}</div>
+    <div class="fixture-panel" id="fp_${node.id}" style="display:none">
+      ${FX_KEYS.map(k=>`<div class="fx-row">
+        <span class="fx-name">${FX[k].name}</span>
+        <input class="fx-qty" type="number" min="0" value="${node.fixtures[k]||0}"
+          onchange="setFx('${node.id}','${k}',+this.value)">
+      </div>`).join('')}
+    </div>`;
+  if(calc.kids&&calc.kids.length){
+    h+=`<div class="children-wrap">`;
+    for(const c of calc.kids) h+=nodeHTML(c.node,c);
+    h+=`</div>`;
+  }
+  h+=`</div>`;
+  return h;
+}
+
+function toggleFP(id){
+  const el=document.getElementById('fp_'+id);
+  if(el) el.style.display=el.style.display==='none'?'grid':'none';
+}
+
+// ── SVG Branch Tree ────────────────────────────────────────────────────────────
+const NW=155,NH=78,HG=44,VG=14;
+
+function layout(calc,x=0,y=0){
+  const ch=calc.kids||[];
+  let totH=NH;
+  const cl=[];
+  if(ch.length){
+    let cy=y;
+    for(const c of ch){const l=layout(c,x+NW+HG,cy);cl.push(l);cy+=l.totH+VG;}
+    totH=Math.max(NH,cy-y-VG);
+  }
+  return {x,y:y+totH/2-NH/2,totH,calc,cl};
+}
+
+function svgNodes(lay,buf=''){
+  const {x,y,calc,cl}=lay;
+  const cx=x+NW/2, cy=y+NH/2;
+  buf+=`<rect x="${x}" y="${y}" width="${NW}" height="${NH}" rx="6" fill="#22263a" stroke="#2e3350" stroke-width="1"/>`;
+  buf+=`<text x="${cx}" y="${y+13}" text-anchor="middle" fill="#8892aa" font-size="10">${esc(calc.node?.name||'')}</text>`;
+  const cols=['#4f8ef7','#e05c8a','#e05c5c','#a07cf7'];
+  const vals=[ps(calc.cwPipe),ps(calc.hwPipe),ps(calc.sewPipe),ps(calc.wstPipe)];
+  const bw=34,bh=15,bx0=x+3,by0=y+20;
+  for(let i=0;i<4;i++){
+    const bx=bx0+i*(bw+2);
+    buf+=`<rect x="${bx}" y="${by0}" width="${bw}" height="${bh}" rx="3" fill="${cols[i]}22" stroke="${cols[i]}66"/>`;
+    buf+=`<text x="${bx+bw/2}" y="${by0+11}" text-anchor="middle" fill="${cols[i]}" font-size="9" font-weight="600">${vals[i]}</text>`;
+  }
+  buf+=`<text x="${cx}" y="${y+52}" text-anchor="middle" fill="#8892aa" font-size="9">${calc.cwQ.toFixed(1)}L/min · ${calc.sewDFU+calc.wstDFU}DFU</text>`;
+  const sm=fxSummary(calc.node?.fixtures||{});
+  const sl=sm.length>24?sm.slice(0,24)+'…':sm;
+  buf+=`<text x="${x+NW+4}" y="${y+NH/2+4}" fill="#8892aa" font-size="9">${esc(sl)}</text>`;
+  for(const c of cl){
+    const cx2=c.x+NW/2,cy2=c.y+NH/2;
+    buf+=`<line x1="${x+NW}" y1="${cy}" x2="${cx2}" y2="${cy2}" stroke="#2e3350" stroke-width="1.5"/>`;
+    buf=svgNodes(c,buf);
+  }
+  return buf;
+}
+
+function svgSize(lay){
+  let mx=lay.x+NW,my=lay.y+NH;
+  for(const c of lay.cl||[]){const[a,b]=svgSize(c);mx=Math.max(mx,a);my=Math.max(my,b);}
+  return[mx,my];
+}
+
+function svgSection(tree,calc){
+  const lay=layout(calc,10,10);
+  const[w,h]=svgSize(lay);
+  return `<div class="svg-wrap">
+    <div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;padding:6px 8px 0;font-weight:700">배관 트리 시각화</div>
+    <svg width="${w+180}" height="${h+20}" style="display:block;padding:6px">${svgNodes(lay)}</svg>
+  </div>`;
+}
+
+// ── Tab 2/3 ────────────────────────────────────────────────────────────────────
+function renderCWTab(){
+  connZoneList('cwZoneList',true);
+  connMain('cwMain','cw');
+}
+function renderDRTab(){
+  connZoneList('drZoneList',false);
+  connMain('drMain','dr');
+}
+
+function connZoneList(elId,isCW){
+  const el=document.getElementById(elId);
+  let h=`<div class="section-title">${isCW?'급수/급탕':'오배수'} Zone</div>`;
+  if(!S.zones.length){el.innerHTML=h+`<div class="empty" style="padding:16px 0">Zone 없음</div>`;return;}
+  for(const z of S.zones){
+    const r=calcZone(z);
+    h+=`<div class="conn-zone-item">
+      <div style="font-size:12px;font-weight:600;margin-bottom:3px">${esc(z.name)}</div>
+      <div style="font-size:11px;color:var(--text2);margin-bottom:4px">${z.floor}</div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap">
+        ${isCW
+          ?`<span class="badge ${r.cwPipe?'badge-cw':'badge-na'}">${ps(r.cwPipe)}</span><span class="badge ${r.hwPipe?'badge-hw':'badge-na'}">${ps(r.hwPipe)}</span>`
+          :`<span class="badge ${r.sewPipe?'badge-sew':'badge-na'}">${ps(r.sewPipe)}</span><span class="badge ${r.wstPipe?'badge-wst':'badge-na'}">${ps(r.wstPipe)}</span>`
+        }
+      </div></div>`;
+  }
+  el.innerHTML=h;
+}
+
+function connMain(elId,type){
+  const el=document.getElementById(elId);
+  const isCW=type==='cw';
+  const groups=S[type].groups, sgs=S[type].sgs;
+
+  let h=`<div class="section">
+    <div class="fr mb"><span class="section-title" style="margin:0">그룹 설정</span>
+      <button class="btn btn-primary btn-sm ml" onclick="addGroup('${type}')">+ 그룹 추가</button></div>`;
+  if(!groups.length){
+    h+=`<div class="empty" style="padding:20px 0">그룹이 없습니다. Zone을 묶어 관경을 계산하세요.</div>`;
+  } else {
+    for(const g of groups){
+      const gr=isCW?calcCWGroup(g):calcDRGroup(g);
+      h+=`<div class="group-card">
+        <div class="group-hdr">
+          <input class="group-name-inp" value="${esc(g.name)}" onchange="setGroupName('${type}','${g.id}',this.value)">
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            ${isCW
+              ?`<span class="badge badge-cw">${ps(gr.cwPipe)} · ${gr.cwQ.toFixed(1)}L/min</span>
+                <span class="badge badge-hw">${ps(gr.hwPipe)} · ${gr.hwQ.toFixed(1)}L/min</span>`
+              :`<span class="badge badge-sew">${ps(gr.sewPipe)} · ${gr.sewDFU.toFixed(1)}DFU</span>
+                <span class="badge badge-wst">${ps(gr.wstPipe)} · ${gr.wstDFU.toFixed(1)}DFU</span>`
+            }
+            ${isCW&&g.zoneIds.length>=2?`<span class="badge badge-na">동시사용율 90%</span>`:''}
+            ${!isCW?`<span class="badge badge-na">오수 ${(gr.sewSimult*100).toFixed(0)}% / 배수 ${(gr.wstSimult*100).toFixed(0)}%</span>`:''}
+          </div>
+          <button class="btn btn-danger btn-sm ml" onclick="delGroup('${type}','${g.id}')">삭제</button>
+        </div>
+        <div class="zone-check-list">
+          ${S.zones.map(z=>`<label class="zone-check-item">
+            <input type="checkbox" ${g.zoneIds.includes(z.id)?'checked':''}
+              onchange="toggleZone('${type}','${g.id}','${z.id}',this.checked)">
+            <span>${esc(z.name)}</span>
+            <span style="color:var(--text2);font-size:11px">${z.floor}</span>
+          </label>`).join('')}
+        </div></div>`;
+    }
+  }
+  h+=`</div>`;
+
+  // Cumulative table
+  h+=`<div class="section">
+    <div class="fr mb"><span class="section-title" style="margin:0">누적 관경 확인</span>
+      <button class="btn btn-ghost btn-sm ml" onclick="addSG('${type}')">+ 행 추가</button></div>`;
+  if(!sgs.length){
+    h+=`<div class="empty" style="padding:16px 0">그룹 순서를 설정해 관경 변화를 확인하세요.</div>`;
+  } else {
+    h+=`<table><thead><tr><th>#</th><th>누적 그룹</th>
+      ${isCW?'<th>급수</th><th>급탕</th><th>유량(L/min)</th>':'<th>오수관</th><th>배수관</th><th>DFU</th>'}
+    </tr></thead><tbody>`;
+    let cCw=0,cHw=0,cSew=0,cWst=0;
+    for(let i=0;i<sgs.length;i++){
+      const sg=sgs[i];
+      if(sg.groupId){
+        const g=groups.find(g=>g.id===sg.groupId);
+        if(g){
+          if(isCW){const gr=calcCWGroup(g);cCw+=gr.cwQ;cHw+=gr.hwQ;}
+          else{const gr=calcDRGroup(g);cSew+=gr.sewDFU;cWst+=gr.wstDFU;}
+        }
+      }
+      const lbl=sgs.slice(0,i+1).filter(s=>s.groupId).map(s=>{
+        const g=groups.find(g=>g.id===s.groupId);return g?g.name:'';
+      }).filter(Boolean).join(' + ')||'(미선택)';
+      h+=`<tr><td>${i+1}</td>
+        <td><div style="display:flex;align-items:center;gap:6px">
+          <select onchange="setSGGroup('${type}','${sg.id}',this.value)">
+            <option value="">-- 선택 --</option>
+            ${groups.map(g=>`<option value="${g.id}"${sg.groupId===g.id?' selected':''}>${esc(g.name)}</option>`).join('')}
+          </select>
+          <button class="btn btn-danger btn-sm" onclick="delSG('${type}','${sg.id}')">✕</button>
+        </div></td>`;
+      if(isCW){
+        h+=`<td><span class="badge badge-cw">${ps(flowPipe(cCw))}</span></td>
+            <td><span class="badge badge-hw">${ps(flowPipe(cHw))}</span></td>
+            <td>${cCw.toFixed(1)} / ${cHw.toFixed(1)}</td>`;
+      } else {
+        h+=`<td><span class="badge badge-sew">${ps(cSew>0?Math.max(sewPipe(cSew),100):0)}</span></td>
+            <td><span class="badge badge-wst">${ps(cWst>0?Math.max(wstPipe(cWst),50):0)}</span></td>
+            <td>${cSew.toFixed(1)} / ${cWst.toFixed(1)}</td>`;
+      }
+      h+=`</tr>`;
+    }
+    h+=`</tbody></table>`;
+  }
+  h+=`</div>`;
+  el.innerHTML=h;
+}
+
+// ── Tab 4 ──────────────────────────────────────────────────────────────────────
+function renderResult(){
+  const el=document.getElementById('resultPanel');
+  const cm=calcCWMain(), dm=calcDRMain();
+  let h=`<div class="result-grid">
+    <div class="result-card">
+      <div class="result-card-title">급수 메인관</div>
+      <div class="result-pipe-big" style="color:var(--accent)">${ps(cm.cwPipe)}</div>
+      <div class="result-pipe-sub">설계유량 ${cm.cwQ.toFixed(1)} L/min</div>
+    </div>
+    <div class="result-card">
+      <div class="result-card-title">급탕 메인관</div>
+      <div class="result-pipe-big" style="color:var(--hot)">${ps(cm.hwPipe)}</div>
+      <div class="result-pipe-sub">설계유량 ${cm.hwQ.toFixed(1)} L/min</div>
+    </div>
+    <div class="result-card">
+      <div class="result-card-title">오배수 메인관</div>
+      <div class="result-pipe-pair">
+        <div><div style="font-size:11px;color:var(--text2);margin-bottom:4px">오수관</div>
+          <div class="result-pipe-big" style="font-size:30px;color:var(--red)">${ps(dm.sewPipe)}</div>
+          <div class="result-pipe-sub">${dm.sewDFU.toFixed(1)} DFU</div></div>
+        <div><div style="font-size:11px;color:var(--text2);margin-bottom:4px">배수관</div>
+          <div class="result-pipe-big" style="font-size:30px;color:var(--drain)">${ps(dm.wstPipe)}</div>
+          <div class="result-pipe-sub">${dm.wstDFU.toFixed(1)} DFU</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="section"><div class="section-title">급수/급탕 계통도</div>${mainSVG(true)}</div>
+  <div class="section"><div class="section-title">오배수 계통도</div>${mainSVG(false)}</div>`;
+  el.innerHTML=h;
+}
+
+function mainSVG(isCW){
+  const groups=S[isCW?'cw':'dr'].groups;
+  const mainR=isCW?calcCWMain():calcDRMain();
+  const NW2=140,NH2=66,HG2=44,VG2=10;
+
+  const aid=assignedIds(groups);
+  const unassigned=S.zones.filter(z=>!aid.has(z.id));
+  const gnodes=groups.map(g=>{
+    const gr=isCW?calcCWGroup(g):calcDRGroup(g);
+    return {name:g.name,r:gr,zones:g.zoneIds.map(id=>S.zones.find(z=>z.id===id)).filter(Boolean)};
+  });
+  if(unassigned.length){
+    const ur={cwQ:0,hwQ:0,sewDFU:0,wstDFU:0};
+    for(const z of unassigned){const r=calcZone(z);ur.cwQ+=r.cwQ;ur.hwQ+=r.hwQ;ur.sewDFU+=r.sewDFU;ur.wstDFU+=r.wstDFU;}
+    ur.cwPipe=flowPipe(ur.cwQ);ur.hwPipe=flowPipe(ur.hwQ);
+    ur.sewPipe=ur.sewDFU>0?Math.max(sewPipe(ur.sewDFU),100):0;
+    ur.wstPipe=ur.wstDFU>0?Math.max(wstPipe(ur.wstDFU),50):0;
+    gnodes.push({name:'미배정',r:ur,zones:unassigned});
+  }
+  if(!gnodes.length&&!S.zones.length) return `<div class="empty">Zone 데이터가 없습니다.</div>`;
+
+  const x0=10,x1=x0+NW2+HG2,x2=x1+NW2+HG2;
+  let totZ=0; for(const g of gnodes) totZ+=Math.max(1,g.zones.length);
+  const svgH=Math.max(NH2+40,totZ*(NH2+VG2)+20);
+  const svgW=x2+NW2+160;
+
+  let buf='';
+  const mcy=svgH/2;
+  buf+=mnode(x0,mcy-NH2/2,NW2,NH2,'기계실/메인관',mainR,isCW,'#f7a64f');
+
+  let cy=10;
+  for(const gn of gnodes){
+    const zc=Math.max(1,gn.zones.length);
+    const gh=zc*(NH2+VG2)-VG2;
+    const gy=cy+gh/2-NH2/2;
+    buf+=mnode(x1,gy,NW2,NH2,gn.name,gn.r,isCW,'#38c9a0');
+    buf+=`<line x1="${x0+NW2}" y1="${mcy}" x2="${x1}" y2="${gy+NH2/2}" stroke="#2e3350" stroke-width="1.5"/>`;
+    let zy=cy;
+    for(const z of gn.zones){
+      const zr=calcZone(z);
+      buf+=mnode(x2,zy,NW2,NH2,z.name,zr,isCW,'#4f8ef7');
+      buf+=`<line x1="${x1+NW2}" y1="${gy+NH2/2}" x2="${x2}" y2="${zy+NH2/2}" stroke="#2e3350" stroke-width="1.5"/>`;
+      zy+=NH2+VG2;
+    }
+    if(!gn.zones.length) zy+=NH2+VG2;
+    cy=zy;
+  }
+  return `<div style="overflow-x:auto"><svg width="${svgW}" height="${svgH+20}" style="display:block">${buf}</svg></div>`;
+}
+
+function mnode(x,y,w,h,name,r,isCW,bc){
+  const cx=x+w/2;
+  let b=`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="6" fill="#1a1d27" stroke="${bc}88" stroke-width="1.5"/>`;
+  b+=`<text x="${cx}" y="${y+14}" text-anchor="middle" fill="#e8ecf4" font-size="10" font-weight="600">${esc(name)}</text>`;
+  if(isCW){
+    b+=`<text x="${x+5}" y="${y+h-26}" fill="#4f8ef7" font-size="9" font-weight="600">급수 ${ps(r.cwPipe)} ${(r.cwQ||0).toFixed(1)}L/min</text>`;
+    b+=`<text x="${x+5}" y="${y+h-13}" fill="#e05c8a" font-size="9" font-weight="600">급탕 ${ps(r.hwPipe)} ${(r.hwQ||0).toFixed(1)}L/min</text>`;
+  } else {
+    b+=`<text x="${x+5}" y="${y+h-26}" fill="#e05c5c" font-size="9" font-weight="600">오수 ${ps(r.sewPipe)} ${(r.sewDFU||0).toFixed(1)}DFU</text>`;
+    b+=`<text x="${x+5}" y="${y+h-13}" fill="#a07cf7" font-size="9" font-weight="600">배수 ${ps(r.wstPipe)} ${(r.wstDFU||0).toFixed(1)}DFU</text>`;
+  }
+  return b;
+}
+
+// ── Actions ────────────────────────────────────────────────────────────────────
+function addZone(){
+  showModal('Zone 이름','새 Zone 추가',v=>{
+    const z=newZone(v||'Zone '+(S.zones.length+1));
+    S.zones.push(z); activeZone=z.id; renderAll();
+  });
+}
+function delZone(id){
+  if(!confirm('Zone을 삭제하시겠습니까?')) return;
+  S.zones=S.zones.filter(z=>z.id!==id);
+  for(const t of['cw','dr']) for(const g of S[t].groups) g.zoneIds=g.zoneIds.filter(i=>i!==id);
+  if(activeZone===id) activeZone=S.zones[0]?.id||null;
+  renderAll();
+}
+function selZone(id){activeZone=id;renderSidebar();renderEditor();}
+function setZoneName(id,v){const z=findZone(id);if(z){z.name=v;renderSidebar();}}
+function setZoneFloor(id,v){const z=findZone(id);if(z){z.floor=v;renderSidebar();}}
+
+function setNodeName(nodeId,v){
+  const z=findZone(activeZone);if(!z)return;
+  const n=findNode(z.tree,nodeId);if(n)n.name=v;
+}
+
+function setFx(nodeId,key,val){
+  const z=findZone(activeZone);if(!z)return;
+  const n=findNode(z.tree,nodeId);if(!n)return;
+  n.fixtures[key]=Math.max(0,val||0);
+  // Partial update: chips + badges + summary
+  const r=calcZone(z);
+  const chips=document.getElementById('zone-chips-'+z.id);
+  if(chips) chips.innerHTML=chipsHTML(r);
+  const nb=document.getElementById('nb_'+nodeId);
+  if(nb) nb.innerHTML=nodeBadgesHTML(calcNode(n));
+  const fs=document.getElementById('fxs_'+nodeId);
+  if(fs) fs.textContent=fxSummary(n.fixtures);
+  renderSidebar();
+}
+
+function addChild(parentId){
+  const z=findZone(activeZone);if(!z)return;
+  const p=findNode(z.tree,parentId);if(!p)return;
+  if(!p.children)p.children=[];
+  p.children.push(newNode('하위 분기 '+(p.children.length+1)));
+  renderEditor();
+}
+function delNode(nodeId){
+  const z=findZone(activeZone);if(!z)return;
+  const p=findParent(z.tree,nodeId);if(!p)return;
+  p.children=p.children.filter(c=>c.id!==nodeId);
+  renderEditor(); renderSidebar();
+}
+
+function addGroup(type){
+  showModal('그룹 이름',`새 ${type==='cw'?'급수/급탕':'오배수'} 그룹`,v=>{
+    S[type].groups.push({id:uid(),name:v||'그룹 '+(S[type].groups.length+1),zoneIds:[]});
+    renderTab(activeTab);
+  });
+}
+function delGroup(type,id){
+  S[type].groups=S[type].groups.filter(g=>g.id!==id);
+  S[type].sgs=S[type].sgs.filter(s=>s.groupId!==id);
+  renderTab(activeTab);
+}
+function setGroupName(type,id,v){const g=S[type].groups.find(g=>g.id===id);if(g)g.name=v;}
+function toggleZone(type,gid,zid,chk){
+  const g=S[type].groups.find(g=>g.id===gid);if(!g)return;
+  if(chk&&!g.zoneIds.includes(zid))g.zoneIds.push(zid);
+  if(!chk)g.zoneIds=g.zoneIds.filter(i=>i!==zid);
+  renderTab(activeTab);
+}
+function addSG(type){S[type].sgs.push({id:uid(),groupId:''});renderTab(activeTab);}
+function delSG(type,id){S[type].sgs=S[type].sgs.filter(s=>s.id!==id);renderTab(activeTab);}
+function setSGGroup(type,sgId,gid){
+  const sg=S[type].sgs.find(s=>s.id===sgId);if(sg){sg.groupId=gid;renderTab(activeTab);}
+}
+
+// ── Save / Load ────────────────────────────────────────────────────────────────
+function saveJSON(){
+  S.projectName=document.getElementById('projectName').value||S.projectName;
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(S,null,2)],{type:'application/json'}));
+  a.download=(S.projectName||'프로젝트')+'.json'; a.click();
+}
+function loadJSON(e){
+  const f=e.target.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=ev=>{
+    try{
+      const d=JSON.parse(ev.target.result);
+      Object.assign(S,d);
+      let mx=0;
+      const scan=o=>{
+        if(!o)return;
+        if(o.id){const n=parseInt(o.id.slice(1));if(n>mx)mx=n;}
+        (o.children||[]).forEach(scan);
+      };
+      S.zones.forEach(z=>{scan(z);scan(z.tree);});
+      [...S.cw.groups,...S.dr.groups,...S.cw.sgs,...S.dr.sgs].forEach(scan);
+      _id=mx+1;
+      document.getElementById('projectName').value=S.projectName||'';
+      activeZone=S.zones[0]?.id||null;
+      renderAll();
+    }catch(ex){alert('JSON 파일 형식이 올바르지 않습니다.');}
+  };
+  r.readAsText(f); e.target.value='';
+}
+
+// ── Modal ──────────────────────────────────────────────────────────────────────
+function showModal(ph,title,cb){
+  const ov=document.getElementById('modalOverlay');
+  ov.style.display='flex';
+  ov.innerHTML=`<div class="modal">
+    <div class="modal-title">${esc(title)}</div>
+    <input class="modal-inp" id="minp" type="text" placeholder="${esc(ph)}">
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="closeModal()">취소</button>
+      <button class="btn btn-primary" onclick="confirmModal()">확인</button>
+    </div></div>`;
+  window._mcb=cb;
+  setTimeout(()=>{
+    const el=document.getElementById('minp');
+    if(el){el.focus();el.addEventListener('keydown',e=>{if(e.key==='Enter')confirmModal();if(e.key==='Escape')closeModal();});}
+  },30);
+}
+function confirmModal(){const v=document.getElementById('minp')?.value||'';const cb=window._mcb;closeModal();if(cb)cb(v);}
+function closeModal(){document.getElementById('modalOverlay').style.display='none';window._mcb=null;}
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+document.getElementById('projectName').addEventListener('change',function(){S.projectName=this.value;});
+renderAll();
+</script>
+</body>
+</html>
