@@ -124,6 +124,7 @@ select:focus{outline:none;border-color:var(--accent)}
   <span class="logo">⊞ 위생배관 관경 계산서</span>
   <input id="projectName" type="text" placeholder="프로젝트명 입력…">
   <div class="hbtns">
+    <button class="btn btn-danger" onclick="resetAll()">🔄 초기화</button>
     <button class="btn btn-success" onclick="saveJSON()">💾 JSON 저장</button>
     <label class="btn btn-ghost" style="cursor:pointer">📂 불러오기<input type="file" accept=".json" style="display:none" onchange="loadJSON(event)"></label>
     <button class="btn btn-ghost" onclick="window.print()">🖨 PDF 저장</button>
@@ -817,6 +818,17 @@ function setSGGroup(type,sgId,gid){
 }
 
 // ── Save / Load ────────────────────────────────────────────────────────────────
+function resetAll(){
+  if(!confirm('현재 작업을 초기화할까요? 저장하지 않은 내용은 사라집니다.')) return;
+  S.projectName='새 프로젝트';
+  S.zones=[];
+  S.cw={groups:[],sgs:[]};
+  S.dr={groups:[],sgs:[]};
+  _id=1;
+  activeZone=null;
+  document.getElementById('projectName').value='새 프로젝트';
+  renderAll();
+}
 function saveJSON(){
   S.projectName=document.getElementById('projectName').value||S.projectName;
   const a=document.createElement('a');
