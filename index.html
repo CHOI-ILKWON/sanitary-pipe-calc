@@ -116,6 +116,16 @@ select:focus{outline:none;border-color:var(--accent)}
   .tab-pane{display:block!important;height:auto!important;page-break-after:always}
   body{background:#fff;color:#000}
 }
+.fx-added-list{margin-top:5px;display:flex;flex-direction:column;gap:3px}
+.fx-added-row{display:flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:3px 8px}
+.fx-added-name{font-size:11px;color:var(--text2);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fx-del-btn{background:none;border:none;color:var(--text2);cursor:pointer;font-size:15px;padding:0 2px;line-height:1;flex-shrink:0}
+.fx-del-btn:hover{color:var(--red)}
+.fx-picker-wrap{position:relative}
+.fx-picker{position:absolute;top:calc(100% + 4px);right:0;z-index:50;background:var(--surface);border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.5);min-width:172px;max-height:240px;overflow-y:auto;padding:4px}
+.fx-picker-item{padding:6px 10px;cursor:pointer;border-radius:4px;font-size:12px;white-space:nowrap}
+.fx-picker-item:hover{background:var(--surface2);color:var(--accent)}
+.fx-picker-empty{padding:6px 10px;font-size:11px;color:var(--text2);cursor:default}
 </style>
 </head>
 <body>
@@ -438,6 +448,24 @@ function nodeBadgesHTML(c){
   <span class="badge badge-na" style="color:var(--text)">${c.cwQ.toFixed(1)}L·${c.sewDFU+c.wstDFU}DFU</span>`;
 }
 
+function addedFxRowsHTML(node,nodeId){
+  const fx=node.fixtures||{};
+  return FX_KEYS.filter(k=>(fx[k]||0)>0).map(k=>`
+    <div class="fx-added-row">
+      <span class="fx-added-name">${FX[k].name}</span>
+      <input class="fx-qty" type="number" min="0" value="${fx[k]}"
+        onchange="setFx('${nodeId}','${k}',+this.value)">
+      <button class="fx-del-btn" title="삭제" onclick="setFx('${nodeId}','${k}',0)">×</button>
+    </div>`).join('');
+}
+
+function pickerItemsHTML(node,nodeId){
+  const fx=node.fixtures||{};
+  const avail=FX_KEYS.filter(k=>!((fx[k]||0)>0));
+  if(!avail.length) return `<div class="fx-picker-empty">모두 추가됨</div>`;
+  return avail.map(k=>`<div class="fx-picker-item" onclick="addFxToNode('${nodeId}','${k}')">${FX[k].name}</div>`).join('');
+}
+
 function nodeHTML(node,calc,isRoot=false){
   const bc=isRoot?'var(--accent2)':'var(--border)';
   const bg=isRoot?'var(--surface2)':'var(--surface3)';
@@ -446,19 +474,15 @@ function nodeHTML(node,calc,isRoot=false){
       <input class="node-name-inp" value="${esc(node.name)}" onchange="setNodeName('${node.id}',this.value)">
       <div class="node-badges" id="nb_${node.id}">${nodeBadgesHTML(calc)}</div>
       <div class="fr" style="margin-left:auto;gap:4px">
-        <button class="btn btn-ghost btn-sm" onclick="toggleFP('${node.id}')">기구 입력</button>
+        <div class="fx-picker-wrap">
+          <button class="btn btn-ghost btn-sm" onclick="toggleFxPicker('${node.id}')">+ 기구 추가</button>
+          <div class="fx-picker" id="fxpick_${node.id}" style="display:none">${pickerItemsHTML(node,node.id)}</div>
+        </div>
         <button class="btn btn-success btn-sm" onclick="addChild('${node.id}')">+ 하위 분기</button>
         ${!isRoot?`<button class="btn btn-danger btn-sm" onclick="delNode('${node.id}')">삭제</button>`:''}
       </div>
     </div>
-    <div class="fx-summary" id="fxs_${node.id}">${fxSummary(node.fixtures)}</div>
-    <div class="fixture-panel" id="fp_${node.id}" style="display:none">
-      ${FX_KEYS.map(k=>`<div class="fx-row">
-        <span class="fx-name">${FX[k].name}</span>
-        <input class="fx-qty" type="number" min="0" value="${node.fixtures[k]||0}"
-          onchange="setFx('${node.id}','${k}',+this.value)">
-      </div>`).join('')}
-    </div>`;
+    <div class="fx-added-list" id="fal_${node.id}">${addedFxRowsHTML(node,node.id)}</div>`;
   if(calc.kids&&calc.kids.length){
     h+=`<div class="children-wrap">`;
     for(const c of calc.kids) h+=nodeHTML(c.node,c);
@@ -468,63 +492,69 @@ function nodeHTML(node,calc,isRoot=false){
   return h;
 }
 
-function toggleFP(id){
-  const el=document.getElementById('fp_'+id);
-  if(el) el.style.display=el.style.display==='none'?'grid':'none';
-}
+// ── SVG Branch Tree (top-down layout) ─────────────────────────────────────────
+const NW=112,NH=56,HG=10,VG=40;
 
-// ── SVG Branch Tree ────────────────────────────────────────────────────────────
-const NW=155,NH=78,HG=44,VG=14;
-
-function layout(calc,x=0,y=0){
+function layoutTD(calc){
   const ch=calc.kids||[];
-  let totH=NH;
-  const cl=[];
-  if(ch.length){
-    let cy=y;
-    for(const c of ch){const l=layout(c,x+NW+HG,cy);cl.push(l);cy+=l.totH+VG;}
-    totH=Math.max(NH,cy-y-VG);
+  const cl=ch.map(c=>layoutTD(c));
+  let subtreeW;
+  if(cl.length){
+    subtreeW=cl.reduce((s,c)=>s+c.subtreeW,0)+(cl.length-1)*HG;
+    subtreeW=Math.max(NW,subtreeW);
+  } else {
+    subtreeW=NW;
   }
-  return {x,y:y+totH/2-NH/2,totH,calc,cl};
+  return {calc,cl,subtreeW};
 }
 
-function svgNodes(lay,buf=''){
+function placeTD(lay,x=10,y=10){
+  lay.x=x+(lay.subtreeW-NW)/2;
+  lay.y=y;
+  let cx=x;
+  for(const c of lay.cl){
+    placeTD(c,cx,y+NH+VG);
+    cx+=c.subtreeW+HG;
+  }
+}
+
+function svgNodesTD(lay,buf=''){
   const {x,y,calc,cl}=lay;
-  const cx=x+NW/2, cy=y+NH/2;
-  buf+=`<rect x="${x}" y="${y}" width="${NW}" height="${NH}" rx="6" fill="#22263a" stroke="#2e3350" stroke-width="1"/>`;
-  buf+=`<text x="${cx}" y="${y+13}" text-anchor="middle" fill="#8892aa" font-size="10">${esc(calc.node?.name||'')}</text>`;
+  const ncx=x+NW/2, nby=y+NH;
+  buf+=`<rect x="${x}" y="${y}" width="${NW}" height="${NH}" rx="5" fill="#22263a" stroke="#2e3350" stroke-width="1"/>`;
+  buf+=`<text x="${ncx}" y="${y+11}" text-anchor="middle" fill="#8892aa" font-size="9">${esc(calc.node?.name||'')}</text>`;
   const cols=['#4f8ef7','#e05c8a','#e05c5c','#a07cf7'];
   const vals=[ps(calc.cwPipe),ps(calc.hwPipe),ps(calc.sewPipe),ps(calc.wstPipe)];
-  const bw=34,bh=15,bx0=x+3,by0=y+20;
+  const bw=51,bh=13,bgap=2;
+  const bx0=x+(NW-2*bw-bgap)/2, by0=y+15;
   for(let i=0;i<4;i++){
-    const bx=bx0+i*(bw+2);
-    buf+=`<rect x="${bx}" y="${by0}" width="${bw}" height="${bh}" rx="3" fill="${cols[i]}22" stroke="${cols[i]}66"/>`;
-    buf+=`<text x="${bx+bw/2}" y="${by0+11}" text-anchor="middle" fill="${cols[i]}" font-size="9" font-weight="600">${vals[i]}</text>`;
+    const bx=bx0+(i%2)*(bw+bgap), by=by0+Math.floor(i/2)*(bh+2);
+    buf+=`<rect x="${bx}" y="${by}" width="${bw}" height="${bh}" rx="2" fill="${cols[i]}22" stroke="${cols[i]}66"/>`;
+    buf+=`<text x="${bx+bw/2}" y="${by+9}" text-anchor="middle" fill="${cols[i]}" font-size="8" font-weight="600">${vals[i]}</text>`;
   }
-  buf+=`<text x="${cx}" y="${y+52}" text-anchor="middle" fill="#8892aa" font-size="9">${calc.cwQ.toFixed(1)}L/min · ${calc.sewDFU+calc.wstDFU}DFU</text>`;
-  const sm=fxSummary(calc.node?.fixtures||{});
-  const sl=sm.length>24?sm.slice(0,24)+'…':sm;
-  buf+=`<text x="${x+NW+4}" y="${y+NH/2+4}" fill="#8892aa" font-size="9">${esc(sl)}</text>`;
+  buf+=`<text x="${ncx}" y="${y+NH-4}" text-anchor="middle" fill="#8892aa" font-size="7.5">${calc.cwQ.toFixed(1)}L · ${(calc.sewDFU+calc.wstDFU).toFixed(0)}DFU</text>`;
   for(const c of cl){
-    const cx2=c.x+NW/2,cy2=c.y+NH/2;
-    buf+=`<line x1="${x+NW}" y1="${cy}" x2="${cx2}" y2="${cy2}" stroke="#2e3350" stroke-width="1.5"/>`;
-    buf=svgNodes(c,buf);
+    const ccx=c.x+NW/2, cty=c.y;
+    const midY=nby+(cty-nby)/2;
+    buf+=`<path d="M${ncx},${nby} L${ncx},${midY} L${ccx},${midY} L${ccx},${cty}" fill="none" stroke="#3a4060" stroke-width="1.5" stroke-linecap="round"/>`;
+    buf=svgNodesTD(c,buf);
   }
   return buf;
 }
 
-function svgSize(lay){
+function svgSizeTD(lay){
   let mx=lay.x+NW,my=lay.y+NH;
-  for(const c of lay.cl||[]){const[a,b]=svgSize(c);mx=Math.max(mx,a);my=Math.max(my,b);}
+  for(const c of lay.cl||[]){const[a,b]=svgSizeTD(c);mx=Math.max(mx,a);my=Math.max(my,b);}
   return[mx,my];
 }
 
 function svgSection(tree,calc){
-  const lay=layout(calc,10,10);
-  const[w,h]=svgSize(lay);
+  const lay=layoutTD(calc);
+  placeTD(lay,10,10);
+  const[w,h]=svgSizeTD(lay);
   return `<div class="svg-wrap">
     <div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;padding:6px 8px 0;font-weight:700">배관 트리 시각화</div>
-    <svg width="${w+180}" height="${h+20}" style="display:block;padding:6px">${svgNodes(lay)}</svg>
+    <svg width="${w+20}" height="${h+20}" style="display:block;padding:6px">${svgNodesTD(lay)}</svg>
   </div>`;
 }
 
@@ -741,6 +771,28 @@ function mnode(x,y,w,h,name,r,isCW,bc){
   return b;
 }
 
+// ── Fixture Picker ─────────────────────────────────────────────────────────────
+let _openPicker=null;
+
+function toggleFxPicker(nodeId){
+  const pick=document.getElementById('fxpick_'+nodeId);
+  if(!pick) return;
+  const showing=pick.style.display!=='none';
+  if(_openPicker&&_openPicker!==nodeId){
+    const prev=document.getElementById('fxpick_'+_openPicker);
+    if(prev) prev.style.display='none';
+  }
+  pick.style.display=showing?'none':'block';
+  _openPicker=showing?null:nodeId;
+}
+
+function addFxToNode(nodeId,key){
+  const pick=document.getElementById('fxpick_'+nodeId);
+  if(pick) pick.style.display='none';
+  _openPicker=null;
+  setFx(nodeId,key,1);
+}
+
 // ── Actions ────────────────────────────────────────────────────────────────────
 function addZone(){
   showModal('Zone 이름','새 Zone 추가',v=>{
@@ -767,15 +819,22 @@ function setNodeName(nodeId,v){
 function setFx(nodeId,key,val){
   const z=findZone(activeZone);if(!z)return;
   const n=findNode(z.tree,nodeId);if(!n)return;
+  const prev=n.fixtures[key]||0;
   n.fixtures[key]=Math.max(0,val||0);
-  // Partial update: chips + badges + summary
+  const curr=n.fixtures[key];
+  // Rebuild fixture list and picker if a fixture was added or removed
+  if((prev===0)!==(curr===0)){
+    const fal=document.getElementById('fal_'+nodeId);
+    if(fal) fal.innerHTML=addedFxRowsHTML(n,nodeId);
+    const pickDiv=document.getElementById('fxpick_'+nodeId);
+    if(pickDiv) pickDiv.innerHTML=pickerItemsHTML(n,nodeId);
+  }
+  // Partial update: chips + badges + sidebar
   const r=calcZone(z);
   const chips=document.getElementById('zone-chips-'+z.id);
   if(chips) chips.innerHTML=chipsHTML(r);
   const nb=document.getElementById('nb_'+nodeId);
   if(nb) nb.innerHTML=nodeBadgesHTML(calcNode(n));
-  const fs=document.getElementById('fxs_'+nodeId);
-  if(fs) fs.textContent=fxSummary(n.fixtures);
   renderSidebar();
 }
 
@@ -881,6 +940,13 @@ function closeModal(){document.getElementById('modalOverlay').style.display='non
 
 // ── Init ───────────────────────────────────────────────────────────────────────
 document.getElementById('projectName').addEventListener('change',function(){S.projectName=this.value;});
+document.addEventListener('click',function(e){
+  if(_openPicker&&!e.target.closest('.fx-picker-wrap')){
+    const pick=document.getElementById('fxpick_'+_openPicker);
+    if(pick) pick.style.display='none';
+    _openPicker=null;
+  }
+});
 renderAll();
 </script>
 </body>
