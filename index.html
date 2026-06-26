@@ -9,6 +9,8 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<!-- Paddle SDK -->
+<script src="https://cdn.paddle.com/paddle/v2/paddle.js"></script>
 <style>
 :root {
   --bg:#0f1117; --surface:#1a1d27; --surface2:#22263a; --surface3:#2a2f47;
@@ -988,13 +990,13 @@ renderAll();
       </div>
       <div style="font-size:26px; font-weight:700; color:#4f8ef7; margin-bottom:4px;" id="payment-price">₩30,000</div>
       <div style="font-size:12px; color:#8892aa; margin-bottom:20px;">평생 이용 · 1회 결제</div>
-      <a id="btn-stripe-pay" href="#" target="_blank" style="
-        display:block; width:100%; padding:13px; background:#635bff; color:#fff;
-        border-radius:8px; font-size:15px; font-weight:700; text-decoration:none;
-        box-sizing:border-box; transition:background 0.15s;
+      <button id="btn-paddle-pay" style="
+        width:100%; padding:13px; background:#635bff; color:#fff; border:none;
+        border-radius:8px; font-size:15px; font-weight:700; cursor:pointer;
+        transition:background 0.15s; font-family:inherit;
       " onmouseover="this.style.background='#4b45cc'" onmouseout="this.style.background='#635bff'">
         카드로 결제하기
-      </a>
+      </button>
       <p style="font-size:11px; color:#8892aa; margin:12px 0 16px;">결제 완료 후 이 페이지로 돌아와 아래 버튼을 눌러주세요</p>
       <button id="btn-check-payment" style="
         width:100%; padding:10px; background:#2a2f47; border:1px solid #2e3350;
@@ -1029,9 +1031,14 @@ const FIREBASE_CONFIG = {
   appId:             "1:631559035777:web:b0e9b687cb3d1cac716680"
 };
 
-// Stripe Payment Link ← Stripe에서 받은 링크로 교체
-const STRIPE_PAYMENT_LINK = "https://buy.stripe.com/YOUR_LINK";
-const PRICE_DISPLAY = "₩30,000";
+// ════════════════════════════════════════
+// PADDLE CONFIG
+// ════════════════════════════════════════
+const PADDLE_TOKEN   = "live_a264e807c3f331e335d21d52c15";
+const PADDLE_PRICE_ID = "pri_01kw1cr56pe9r266avxnnb403n";
+const PRICE_DISPLAY  = "₩30,000";
+
+Paddle.Initialize({ token: PADDLE_TOKEN });
 
 // ════════════════════════════════════════
 // AUTH INIT
@@ -1061,8 +1068,6 @@ async function checkAccess(user) {
     } else {
       document.getElementById('payment-user-email').textContent = user.email;
       document.getElementById('payment-price').textContent = PRICE_DISPLAY;
-      document.getElementById('btn-stripe-pay').href =
-        STRIPE_PAYMENT_LINK + '?prefilled_email=' + encodeURIComponent(user.email);
       showScreen('payment');
     }
   } catch(e) {
@@ -1081,6 +1086,15 @@ document.getElementById('btn-google-login').addEventListener('click', () => {
     const el = document.getElementById('login-error');
     el.textContent = '로그인 중 오류가 발생했습니다.';
     el.style.display = '';
+  });
+});
+
+document.getElementById('btn-paddle-pay').addEventListener('click', () => {
+  const user = fbAuth.currentUser;
+  Paddle.Checkout.open({
+    items: [{ priceId: PADDLE_PRICE_ID, quantity: 1 }],
+    customer: { email: user ? user.email : '' },
+    customData: { uid: user ? user.uid : '' },
   });
 });
 
