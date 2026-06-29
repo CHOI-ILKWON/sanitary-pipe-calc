@@ -1207,7 +1207,7 @@ function schematicSVG(type){
     rowY=i=>TOP_PAD+i*ROW_H+FBH/2+10;
     mainLineY=TOP_PAD+numRows*ROW_H+10+MAIN_PAD;
   } else {
-    mainLineY=TOP_PAD+20;
+    mainLineY=TOP_PAD+FBH+24; // riser box extends FBH/2+16=48px above mainLine; leave room
     rowY=i=>mainLineY+MAIN_PAD+20+i*ROW_H+FBH/2;
   }
   const svgH=isTop?mainLineY+MAIN_PAD+20+numRows*ROW_H+30:mainLineY+FBH+30;
