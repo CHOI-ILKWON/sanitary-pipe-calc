@@ -1132,6 +1132,32 @@ function renderResult(){
   el.innerHTML=h;
 }
 
+// ── Schematic cumulative helpers ──────────────────────────────────────────────
+function sumZonesCum(zoneList){
+  let cwQ=0,hwQ=0,sD=0,wD=0;
+  for(const z of zoneList){const r=calcZone(z);cwQ+=r.cwQ;hwQ+=r.hwQ;sD+=r.sewDFU;wD+=r.wstDFU;}
+  return {cwQ,hwQ,sewDFU:sD,wstDFU:wD,
+    cwPipe:flowPipe(cwQ),hwPipe:flowPipe(hwQ),
+    sewPipe:sD>0?Math.max(sewPipe(sD),100):0,
+    wstPipe:wD>0?Math.max(wstPipe(wD),50):0};
+}
+function sumFloorsCum(floorList,type){
+  let cwQ=0,hwQ=0,sD=0,wD=0;
+  for(const fl of floorList){const r=calcFloor(fl,type);cwQ+=r.cwQ;hwQ+=r.hwQ;sD+=r.sewDFU;wD+=r.wstDFU;}
+  return {cwQ,hwQ,sewDFU:sD,wstDFU:wD,
+    cwPipe:flowPipe(cwQ),hwPipe:flowPipe(hwQ),
+    sewPipe:sD>0?Math.max(sewPipe(sD),100):0,
+    wstPipe:wD>0?Math.max(wstPipe(wD),50):0};
+}
+function sumRisersCum(riserList,type){
+  let cwQ=0,hwQ=0,sD=0,wD=0;
+  for(const ri of riserList){const r=calcRiser(ri,type);cwQ+=r.cwQ;hwQ+=r.hwQ;sD+=r.sewDFU;wD+=r.wstDFU;}
+  return {cwQ,hwQ,sewDFU:sD,wstDFU:wD,
+    cwPipe:flowPipe(cwQ),hwPipe:flowPipe(hwQ),
+    sewPipe:sD>0?Math.max(sewPipe(sD),100):0,
+    wstPipe:wD>0?Math.max(wstPipe(wD),50):0};
+}
+
 // ── Schematic SVG (건물 수직 계통도) ─────────────────────────────────────────
 function schematicSVG(type){
   const isCW=type==='cw';
@@ -1139,74 +1165,61 @@ function schematicSVG(type){
   if(!risers.length&&!floors.length) return `<div class="empty">탭 ②③에서 층과 입상관을 설정하세요.</div>`;
   const isTop=S.mainLocation==='top';
 
-  // ── Layout constants ──────────────────────────────────────────────────────
-  const ZW=148, ZH=82;   // zone box size
-  const ZG=10;            // gap between zone boxes on same floor
-  const ROW_H=ZH+44;     // vertical spacing per floor row
-  const COL_PAD=28;       // riser line → first zone box
-  const RI_SEP=36;        // gap between riser column groups
-  const MAIN_LW=108;      // main pipe label box width
+  // Layout constants
+  const ZW=130, ZH=82;
+  const ZG=10;
+  const ROW_H=ZH+50;
+  const COL_PAD=28;
+  const FBW=102, FBH=64;
+  const FBG=8;
+  const FL_OFFSET=FBW+FBG;
+  const RI_SEP=32;
+  const MAIN_LW=108;
   const TOP_PAD=20;
-  const MAIN_PAD=42;      // space reserved for riser label near main pipe
+  const MAIN_PAD=50;
 
-  // ── Ordered floor list ────────────────────────────────────────────────────
+  // Ordered floor list
   const floorOrder=[];
   const seenFl=new Set();
-  for(const ri of risers){
-    for(const fid of ri.floorIds){
-      if(!seenFl.has(fid)){seenFl.add(fid);floorOrder.push(fid);}
-    }
-  }
-  for(const fl of floors){
-    if(!seenFl.has(fl.id)){seenFl.add(fl.id);floorOrder.push(fl.id);}
-  }
-  const dispFloorIds=isTop?[...floorOrder]:[...floorOrder];
-  const numRows=dispFloorIds.length||1;
+  for(const ri of risers){for(const fid of ri.floorIds){if(!seenFl.has(fid)){seenFl.add(fid);floorOrder.push(fid);}}}
+  for(const fl of floors){if(!seenFl.has(fl.id)){seenFl.add(fl.id);floorOrder.push(fl.id);}}
+  const numRows=floorOrder.length||1;
 
-  // ── Riser column widths ───────────────────────────────────────────────────
+  // Riser column widths & X positions
   const riserData=risers.map(ri=>{
     let maxZ=1;
-    for(const fid of ri.floorIds){
-      const fl=floors.find(f=>f.id===fid);
-      if(fl) maxZ=Math.max(maxZ,fl.zoneIds.length);
-    }
+    for(const fid of ri.floorIds){const fl=floors.find(f=>f.id===fid);if(fl)maxZ=Math.max(maxZ,fl.zoneIds.length);}
     maxZ=Math.max(maxZ,ri.zoneIds.length,1);
     return {ri,maxZ,colW:COL_PAD+maxZ*(ZW+ZG),rr:calcRiser(ri,type)};
   });
-
-  // ── X positions ───────────────────────────────────────────────────────────
   const rX=[];
-  let curX=MAIN_LW+20;
-  for(const rd of riserData){rX.push(curX);curX+=rd.colW+RI_SEP;}
+  let curX=MAIN_LW+FL_OFFSET+16;
+  for(const rd of riserData){rX.push(curX);curX+=FL_OFFSET+rd.colW+RI_SEP;}
   const svgW=Math.max(curX+10,500);
 
-  // ── Y positions ───────────────────────────────────────────────────────────
-  // !isTop: floors stack from top, MAIN pipe at bottom
-  //  isTop: MAIN pipe at top, floors hang downward
-  let rowY, mainLineY;
+  // Y positions
+  let rowY,mainLineY;
   if(!isTop){
-    rowY=i=>TOP_PAD+i*ROW_H+ZH/2+10;
+    rowY=i=>TOP_PAD+i*ROW_H+FBH/2+10;
     mainLineY=TOP_PAD+numRows*ROW_H+10+MAIN_PAD;
   } else {
     mainLineY=TOP_PAD+20;
-    rowY=i=>mainLineY+MAIN_PAD+20+i*ROW_H+ZH/2;
+    rowY=i=>mainLineY+MAIN_PAD+20+i*ROW_H+FBH/2;
   }
-  const svgH=isTop
-    ?mainLineY+MAIN_PAD+20+numRows*ROW_H+30
-    :mainLineY+44;
+  const svgH=isTop?mainLineY+MAIN_PAD+20+numRows*ROW_H+30:mainLineY+50;
 
   const floorRowIdx={};
-  dispFloorIds.forEach((fid,i)=>{floorRowIdx[fid]=i;});
+  floorOrder.forEach((fid,i)=>{floorRowIdx[fid]=i;});
 
   let buf='';
 
-  // ── Floor level guide lines ───────────────────────────────────────────────
-  for(let i=0;i<dispFloorIds.length;i++){
+  // Floor level guide lines
+  for(let i=0;i<floorOrder.length;i++){
     const fy=rowY(i);
     buf+=`<line x1="${MAIN_LW}" y1="${fy}" x2="${svgW-10}" y2="${fy}" stroke="#1e2238" stroke-width="0.7" stroke-dasharray="4,6"/>`;
   }
 
-  // ── MAIN pipe ─────────────────────────────────────────────────────────────
+  // MAIN pipe
   const mainR=calcMainType(type);
   buf+=`<line x1="${MAIN_LW}" y1="${mainLineY}" x2="${svgW-10}" y2="${mainLineY}" stroke="#f7a64f" stroke-width="3"/>`;
   buf+=`<rect x="4" y="${mainLineY-26}" width="${MAIN_LW-8}" height="52" rx="5" fill="#1a1d27" stroke="#f7a64f" stroke-width="1.5"/>`;
@@ -1219,81 +1232,86 @@ function schematicSVG(type){
     buf+=`<text x="${MAIN_LW/2}" y="${mainLineY+16}" text-anchor="middle" fill="#a07cf7" font-size="8.5" font-family="Malgun Gothic,sans-serif">배수 ${ps(mainR.wstPipe)}</text>`;
   }
 
-  // ── Risers ────────────────────────────────────────────────────────────────
+  // Risers
+  const numRisers=risers.length;
   for(let ri_i=0;ri_i<riserData.length;ri_i++){
     const {ri,rr,colW}=riserData[ri_i];
     const rx=rX[ri_i];
     const rColor='#38c9a0';
+    const isTermRiser=(ri_i===numRisers-1);
+    const rrCum=isTermRiser?null:sumRisersCum(risers.slice(ri_i),type);
 
-    // Y extent of this riser
-    const connRowIdxs=ri.floorIds
-      .filter(fid=>floorRowIdx[fid]!==undefined)
-      .map(fid=>floorRowIdx[fid]);
-    const topRowI=connRowIdxs.length?Math.min(...connRowIdxs):-1;
-    const botRowI=connRowIdxs.length?Math.max(...connRowIdxs):-1;
-    const riserTopY=topRowI>=0?rowY(topRowI):mainLineY;
-    const riserBotY=botRowI>=0?rowY(botRowI):mainLineY;
+    const hasDirect=ri.zoneIds.length>0;
+    const hasFloors=ri.floorIds.filter(fid=>floorRowIdx[fid]!==undefined).length>0;
+    const pseudoY=isTop?mainLineY+MAIN_PAD+10+FBH/2:mainLineY-MAIN_PAD-FBH/2;
 
-    // Vertical riser line
-    if(!isTop){
-      buf+=`<line x1="${rx}" y1="${riserTopY}" x2="${rx}" y2="${mainLineY}" stroke="${rColor}" stroke-width="2.5"/>`;
-    } else {
-      buf+=`<line x1="${rx}" y1="${mainLineY}" x2="${rx}" y2="${riserBotY}" stroke="${rColor}" stroke-width="2.5"/>`;
+    // Riser vertical extent
+    let riserExtY=mainLineY;
+    if(hasFloors){
+      const ys=ri.floorIds.filter(fid=>floorRowIdx[fid]!==undefined).map(fid=>rowY(floorRowIdx[fid]));
+      riserExtY=isTop?Math.max(...ys):Math.min(...ys);
     }
+    if(hasDirect) riserExtY=isTop?Math.max(riserExtY,pseudoY):Math.min(riserExtY,pseudoY);
 
-    // Riser label box near main pipe
-    const riLY=mainLineY+(isTop?-(ZH/2+18):4);
-    buf+=`<rect x="${rx-44}" y="${riLY}" width="88" height="52" rx="5" fill="#1a1d27" stroke="${rColor}" stroke-width="1.5"/>`;
-    buf+=`<text x="${rx}" y="${riLY+14}" text-anchor="middle" fill="#e8ecf4" font-size="10" font-weight="700" font-family="Malgun Gothic,sans-serif">${esc(ri.name)}</text>`;
-    if(isCW){
-      buf+=`<text x="${rx}" y="${riLY+29}" text-anchor="middle" fill="#4f8ef7" font-size="8.5" font-family="Malgun Gothic,sans-serif">급수 ${ps(rr.cwPipe)}</text>`;
-      buf+=`<text x="${rx}" y="${riLY+42}" text-anchor="middle" fill="#e05c8a" font-size="8.5" font-family="Malgun Gothic,sans-serif">급탕 ${ps(rr.hwPipe)}</text>`;
-    } else {
-      buf+=`<text x="${rx}" y="${riLY+29}" text-anchor="middle" fill="#e05c5c" font-size="8.5" font-family="Malgun Gothic,sans-serif">오수 ${ps(rr.sewPipe)}</text>`;
-      buf+=`<text x="${rx}" y="${riLY+42}" text-anchor="middle" fill="#a07cf7" font-size="8.5" font-family="Malgun Gothic,sans-serif">배수 ${ps(rr.wstPipe)}</text>`;
-    }
+    if(!isTop && riserExtY<mainLineY)
+      buf+=`<line x1="${rx}" y1="${riserExtY}" x2="${rx}" y2="${mainLineY}" stroke="${rColor}" stroke-width="2.5"/>`;
+    else if(isTop && riserExtY>mainLineY)
+      buf+=`<line x1="${rx}" y1="${mainLineY}" x2="${rx}" y2="${riserExtY}" stroke="${rColor}" stroke-width="2.5"/>`;
 
-    // ── Floors in this riser ─────────────────────────────────────────────
-    for(const fid of ri.floorIds){
-      const fl=floors.find(f=>f.id===fid);
-      if(!fl) continue;
-      const rowI=floorRowIdx[fid];
-      if(rowI===undefined) continue;
-      const fy=rowY(rowI);
-      const fr=calcFloor(fl,type);
+    // Riser box near main
+    const riLY=mainLineY+(isTop?-(FBH/2+16):4);
+    buf+=schRiserBox(rx-FBW/2,riLY,FBW,FBH,ri.name,rr,rrCum,isCW,rColor);
 
-      // Dot on riser at floor level
+    // Floors — sorted nearest-to-main first
+    const riFloors=ri.floorIds
+      .map(fid=>({fid,fl:floors.find(f=>f.id===fid)}))
+      .filter(o=>o.fl&&floorRowIdx[o.fid]!==undefined);
+    riFloors.sort((a,b)=>Math.abs(rowY(floorRowIdx[a.fid])-mainLineY)-Math.abs(rowY(floorRowIdx[b.fid])-mainLineY));
+
+    for(let fi=0;fi<riFloors.length;fi++){
+      const {fid,fl}=riFloors[fi];
+      const fy=rowY(floorRowIdx[fid]);
+      const isTermFloor=(fi===riFloors.length-1);
+      const flOwn=calcFloor(fl,type);
+      const cumFls=riFloors.slice(fi).map(o=>o.fl).filter(Boolean);
+      const flCum=isTermFloor?flOwn:sumFloorsCum(cumFls,type);
+
+      buf+=schFloorBox(rx-FBG-FBW,fy-FBH/2,FBW,FBH,fl.name,flOwn,flCum,isCW);
       buf+=`<circle cx="${rx}" cy="${fy}" r="5" fill="${rColor}" stroke="#0f1117" stroke-width="1.2"/>`;
-      // Floor name label (left of riser)
-      buf+=`<text x="${rx-14}" y="${fy+4}" text-anchor="end" fill="#e8ecf4" font-size="11" font-weight="700" font-family="Malgun Gothic,sans-serif">${esc(fl.name)}</text>`;
 
-      // Horizontal branch line
-      if(fl.zoneIds.length){
-        const lineEnd=rx+COL_PAD+fl.zoneIds.length*(ZW+ZG);
-        buf+=`<line x1="${rx}" y1="${fy}" x2="${lineEnd}" y2="${fy}" stroke="#3a4060" stroke-width="1.5"/>`;
-      }
+      const numZones=fl.zoneIds.length;
+      if(numZones)
+        buf+=`<line x1="${rx}" y1="${fy}" x2="${rx+COL_PAD+numZones*(ZW+ZG)}" y2="${fy}" stroke="#3a4060" stroke-width="1.5"/>`;
 
-      // Zone boxes
       let zx=rx+COL_PAD;
-      for(const zid of fl.zoneIds){
+      for(let zi=0;zi<numZones;zi++){
+        const zid=fl.zoneIds[zi];
         const z=S.zones.find(z=>z.id===zid);
-        if(!z) continue;
-        buf+=schZoneBox(zx,fy-ZH/2,ZW,ZH,z.name,calcZone(z),fr,isCW);
+        if(!z){zx+=ZW+ZG;continue;}
+        const zrOwn=calcZone(z);
+        const isTermZone=(zi===numZones-1);
+        const cumZs=fl.zoneIds.slice(zi).map(id=>S.zones.find(z=>z.id===id)).filter(Boolean);
+        const zrCum=isTermZone?null:sumZonesCum(cumZs);
+        buf+=schZoneBox(zx,fy-ZH/2,ZW,ZH,z.name,zrOwn,zrCum,isCW);
         zx+=ZW+ZG;
       }
     }
 
-    // Direct zones attached to riser (no floor)
-    if(ri.zoneIds.length){
-      const pseudoY=isTop?mainLineY+MAIN_PAD+10+ZH/2:mainLineY-MAIN_PAD-ZH/2;
-      const lineEnd=rx+COL_PAD+ri.zoneIds.length*(ZW+ZG);
-      buf+=`<line x1="${rx}" y1="${pseudoY}" x2="${lineEnd}" y2="${pseudoY}" stroke="#3a4060" stroke-width="1.5"/>`;
-      buf+=`<text x="${rx-14}" y="${pseudoY+4}" text-anchor="end" fill="#8892aa" font-size="10" font-family="Malgun Gothic,sans-serif">직결</text>`;
+    // Direct zones (no floor)
+    if(hasDirect){
+      const nd=ri.zoneIds.length;
+      buf+=`<line x1="${rx}" y1="${pseudoY}" x2="${rx+COL_PAD+nd*(ZW+ZG)}" y2="${pseudoY}" stroke="#3a4060" stroke-width="1.5"/>`;
+      buf+=`<circle cx="${rx}" cy="${pseudoY}" r="5" fill="${rColor}" stroke="#0f1117" stroke-width="1.2"/>`;
       let zx2=rx+COL_PAD;
-      for(const zid of ri.zoneIds){
+      for(let zi=0;zi<nd;zi++){
+        const zid=ri.zoneIds[zi];
         const z=S.zones.find(z=>z.id===zid);
-        if(!z) continue;
-        buf+=schZoneBox(zx2,pseudoY-ZH/2,ZW,ZH,z.name,calcZone(z),null,isCW);
+        if(!z){zx2+=ZW+ZG;continue;}
+        const zrOwn=calcZone(z);
+        const isTermZone=(zi===nd-1);
+        const cumZs=ri.zoneIds.slice(zi).map(id=>S.zones.find(z=>z.id===id)).filter(Boolean);
+        const zrCum=isTermZone?null:sumZonesCum(cumZs);
+        buf+=schZoneBox(zx2,pseudoY-ZH/2,ZW,ZH,z.name,zrOwn,zrCum,isCW);
         zx2+=ZW+ZG;
       }
     }
@@ -1304,26 +1322,94 @@ function schematicSVG(type){
   </div>`;
 }
 
-// Zone box for building schematic: name + (개별관 left | 층누적 right)
-function schZoneBox(x,y,w,h,name,zr,fr,isCW){
+// Zone box: single column if zrCum==null (terminal), else 개별관|누적관
+function schZoneBox(x,y,w,h,name,zrOwn,zrCum,isCW){
   const stroke=isCW?'#4f8ef7':'#e05c5c';
-  const cx=x+w/2, midX=x+w/2;
+  const cx=x+w/2;
   let b=`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="5" fill="#1a1d27" stroke="${stroke}" stroke-width="1.5"/>`;
   b+=`<text x="${cx}" y="${y+14}" text-anchor="middle" fill="#e8ecf4" font-size="9.5" font-weight="700" font-family="Malgun Gothic,sans-serif">${esc(name)}</text>`;
   b+=`<line x1="${x+4}" y1="${y+20}" x2="${x+w-4}" y2="${y+20}" stroke="#2e3350" stroke-width="0.8"/>`;
-  b+=`<line x1="${midX}" y1="${y+20}" x2="${midX}" y2="${y+h-4}" stroke="#2e3350" stroke-width="0.8"/>`;
-  b+=`<text x="${x+w/4}" y="${y+31}" text-anchor="middle" fill="#8892aa" font-size="7.5" font-family="Malgun Gothic,sans-serif">개별관</text>`;
-  b+=`<text x="${x+3*w/4}" y="${y+31}" text-anchor="middle" fill="#8892aa" font-size="7.5" font-family="Malgun Gothic,sans-serif">층누적</text>`;
-  if(isCW){
-    if(zr&&zr.cwPipe) b+=`<text x="${x+w/4}" y="${y+45}" text-anchor="middle" fill="#4f8ef7" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zr.cwPipe)}</text>`;
-    if(zr&&zr.hwPipe) b+=`<text x="${x+w/4}" y="${y+59}" text-anchor="middle" fill="#e05c8a" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zr.hwPipe)}</text>`;
-    if(fr&&fr.cwPipe) b+=`<text x="${x+3*w/4}" y="${y+45}" text-anchor="middle" fill="#4f8ef7" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(fr.cwPipe)}</text>`;
-    if(fr&&fr.hwPipe) b+=`<text x="${x+3*w/4}" y="${y+59}" text-anchor="middle" fill="#e05c8a" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(fr.hwPipe)}</text>`;
+  if(!zrCum){
+    b+=`<text x="${cx}" y="${y+31}" text-anchor="middle" fill="#8892aa" font-size="7.5" font-family="Malgun Gothic,sans-serif">개별관</text>`;
+    if(isCW){
+      if(zrOwn.cwPipe)  b+=`<text x="${cx}" y="${y+45}" text-anchor="middle" fill="#4f8ef7" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zrOwn.cwPipe)}</text>`;
+      if(zrOwn.hwPipe)  b+=`<text x="${cx}" y="${y+59}" text-anchor="middle" fill="#e05c8a" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zrOwn.hwPipe)}</text>`;
+    } else {
+      if(zrOwn.sewPipe) b+=`<text x="${cx}" y="${y+45}" text-anchor="middle" fill="#e05c5c" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zrOwn.sewPipe)}</text>`;
+      if(zrOwn.wstPipe) b+=`<text x="${cx}" y="${y+59}" text-anchor="middle" fill="#a07cf7" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zrOwn.wstPipe)}</text>`;
+    }
   } else {
-    if(zr&&zr.sewPipe) b+=`<text x="${x+w/4}" y="${y+45}" text-anchor="middle" fill="#e05c5c" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zr.sewPipe)}</text>`;
-    if(zr&&zr.wstPipe) b+=`<text x="${x+w/4}" y="${y+59}" text-anchor="middle" fill="#a07cf7" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zr.wstPipe)}</text>`;
-    if(fr&&fr.sewPipe) b+=`<text x="${x+3*w/4}" y="${y+45}" text-anchor="middle" fill="#e05c5c" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(fr.sewPipe)}</text>`;
-    if(fr&&fr.wstPipe) b+=`<text x="${x+3*w/4}" y="${y+59}" text-anchor="middle" fill="#a07cf7" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(fr.wstPipe)}</text>`;
+    b+=`<line x1="${cx}" y1="${y+20}" x2="${cx}" y2="${y+h-4}" stroke="#2e3350" stroke-width="0.8"/>`;
+    b+=`<text x="${x+w/4}" y="${y+31}" text-anchor="middle" fill="#8892aa" font-size="7.5" font-family="Malgun Gothic,sans-serif">개별관</text>`;
+    b+=`<text x="${x+3*w/4}" y="${y+31}" text-anchor="middle" fill="#8892aa" font-size="7.5" font-family="Malgun Gothic,sans-serif">누적관</text>`;
+    if(isCW){
+      if(zrOwn.cwPipe)  b+=`<text x="${x+w/4}"   y="${y+45}" text-anchor="middle" fill="#4f8ef7" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zrOwn.cwPipe)}</text>`;
+      if(zrOwn.hwPipe)  b+=`<text x="${x+w/4}"   y="${y+59}" text-anchor="middle" fill="#e05c8a" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zrOwn.hwPipe)}</text>`;
+      if(zrCum.cwPipe)  b+=`<text x="${x+3*w/4}" y="${y+45}" text-anchor="middle" fill="#4f8ef7" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zrCum.cwPipe)}</text>`;
+      if(zrCum.hwPipe)  b+=`<text x="${x+3*w/4}" y="${y+59}" text-anchor="middle" fill="#e05c8a" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zrCum.hwPipe)}</text>`;
+    } else {
+      if(zrOwn.sewPipe) b+=`<text x="${x+w/4}"   y="${y+45}" text-anchor="middle" fill="#e05c5c" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zrOwn.sewPipe)}</text>`;
+      if(zrOwn.wstPipe) b+=`<text x="${x+w/4}"   y="${y+59}" text-anchor="middle" fill="#a07cf7" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zrOwn.wstPipe)}</text>`;
+      if(zrCum.sewPipe) b+=`<text x="${x+3*w/4}" y="${y+45}" text-anchor="middle" fill="#e05c5c" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zrCum.sewPipe)}</text>`;
+      if(zrCum.wstPipe) b+=`<text x="${x+3*w/4}" y="${y+59}" text-anchor="middle" fill="#a07cf7" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zrCum.wstPipe)}</text>`;
+    }
+  }
+  return b;
+}
+
+// Floor box: 층자체 | 전체누적 (always 2 columns)
+function schFloorBox(x,y,w,h,flName,flOwn,flCum,isCW){
+  const stroke=isCW?'#4f8ef7':'#e05c5c';
+  const cx=x+w/2;
+  let b=`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="5" fill="#1a1d27" stroke="${stroke}" stroke-width="1.2"/>`;
+  b+=`<text x="${cx}" y="${y+13}" text-anchor="middle" fill="#e8ecf4" font-size="9" font-weight="700" font-family="Malgun Gothic,sans-serif">${esc(flName)}</text>`;
+  b+=`<line x1="${x+4}" y1="${y+18}" x2="${x+w-4}" y2="${y+18}" stroke="#2e3350" stroke-width="0.8"/>`;
+  b+=`<line x1="${cx}" y1="${y+18}" x2="${cx}" y2="${y+h-4}" stroke="#2e3350" stroke-width="0.8"/>`;
+  b+=`<text x="${x+w/4}" y="${y+28}" text-anchor="middle" fill="#8892aa" font-size="7" font-family="Malgun Gothic,sans-serif">층자체</text>`;
+  b+=`<text x="${x+3*w/4}" y="${y+28}" text-anchor="middle" fill="#8892aa" font-size="7" font-family="Malgun Gothic,sans-serif">전체누적</text>`;
+  if(isCW){
+    if(flOwn.cwPipe) b+=`<text x="${x+w/4}"   y="${y+41}" text-anchor="middle" fill="#4f8ef7" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(flOwn.cwPipe)}</text>`;
+    if(flOwn.hwPipe) b+=`<text x="${x+w/4}"   y="${y+53}" text-anchor="middle" fill="#e05c8a" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(flOwn.hwPipe)}</text>`;
+    if(flCum.cwPipe) b+=`<text x="${x+3*w/4}" y="${y+41}" text-anchor="middle" fill="#4f8ef7" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(flCum.cwPipe)}</text>`;
+    if(flCum.hwPipe) b+=`<text x="${x+3*w/4}" y="${y+53}" text-anchor="middle" fill="#e05c8a" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(flCum.hwPipe)}</text>`;
+  } else {
+    if(flOwn.sewPipe) b+=`<text x="${x+w/4}"   y="${y+41}" text-anchor="middle" fill="#e05c5c" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(flOwn.sewPipe)}</text>`;
+    if(flOwn.wstPipe) b+=`<text x="${x+w/4}"   y="${y+53}" text-anchor="middle" fill="#a07cf7" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(flOwn.wstPipe)}</text>`;
+    if(flCum.sewPipe) b+=`<text x="${x+3*w/4}" y="${y+41}" text-anchor="middle" fill="#e05c5c" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(flCum.sewPipe)}</text>`;
+    if(flCum.wstPipe) b+=`<text x="${x+3*w/4}" y="${y+53}" text-anchor="middle" fill="#a07cf7" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(flCum.wstPipe)}</text>`;
+  }
+  return b;
+}
+
+// Riser box: 자체 | 전체누적 (single col if rrCum==null = terminal riser)
+function schRiserBox(x,y,w,h,riName,rrOwn,rrCum,isCW,stroke){
+  const cx=x+w/2;
+  let b=`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="5" fill="#1a1d27" stroke="${stroke}" stroke-width="1.5"/>`;
+  b+=`<text x="${cx}" y="${y+13}" text-anchor="middle" fill="#e8ecf4" font-size="9.5" font-weight="700" font-family="Malgun Gothic,sans-serif">${esc(riName)}</text>`;
+  b+=`<line x1="${x+4}" y1="${y+18}" x2="${x+w-4}" y2="${y+18}" stroke="#2e3350" stroke-width="0.8"/>`;
+  if(!rrCum){
+    if(isCW){
+      if(rrOwn.cwPipe)  b+=`<text x="${cx}" y="${y+31}" text-anchor="middle" fill="#4f8ef7" font-size="8.5" font-family="Malgun Gothic,sans-serif">급수 ${ps(rrOwn.cwPipe)}</text>`;
+      if(rrOwn.hwPipe)  b+=`<text x="${cx}" y="${y+44}" text-anchor="middle" fill="#e05c8a" font-size="8.5" font-family="Malgun Gothic,sans-serif">급탕 ${ps(rrOwn.hwPipe)}</text>`;
+    } else {
+      if(rrOwn.sewPipe) b+=`<text x="${cx}" y="${y+31}" text-anchor="middle" fill="#e05c5c" font-size="8.5" font-family="Malgun Gothic,sans-serif">오수 ${ps(rrOwn.sewPipe)}</text>`;
+      if(rrOwn.wstPipe) b+=`<text x="${cx}" y="${y+44}" text-anchor="middle" fill="#a07cf7" font-size="8.5" font-family="Malgun Gothic,sans-serif">배수 ${ps(rrOwn.wstPipe)}</text>`;
+    }
+  } else {
+    b+=`<line x1="${cx}" y1="${y+18}" x2="${cx}" y2="${y+h-4}" stroke="#2e3350" stroke-width="0.8"/>`;
+    b+=`<text x="${x+w/4}" y="${y+27}" text-anchor="middle" fill="#8892aa" font-size="7" font-family="Malgun Gothic,sans-serif">자체</text>`;
+    b+=`<text x="${x+3*w/4}" y="${y+27}" text-anchor="middle" fill="#8892aa" font-size="7" font-family="Malgun Gothic,sans-serif">전체누적</text>`;
+    if(isCW){
+      if(rrOwn.cwPipe)  b+=`<text x="${x+w/4}"   y="${y+38}" text-anchor="middle" fill="#4f8ef7" font-size="8.5" font-family="Malgun Gothic,sans-serif">${ps(rrOwn.cwPipe)}</text>`;
+      if(rrOwn.hwPipe)  b+=`<text x="${x+w/4}"   y="${y+51}" text-anchor="middle" fill="#e05c8a" font-size="8.5" font-family="Malgun Gothic,sans-serif">${ps(rrOwn.hwPipe)}</text>`;
+      if(rrCum.cwPipe)  b+=`<text x="${x+3*w/4}" y="${y+38}" text-anchor="middle" fill="#4f8ef7" font-size="8.5" font-family="Malgun Gothic,sans-serif">${ps(rrCum.cwPipe)}</text>`;
+      if(rrCum.hwPipe)  b+=`<text x="${x+3*w/4}" y="${y+51}" text-anchor="middle" fill="#e05c8a" font-size="8.5" font-family="Malgun Gothic,sans-serif">${ps(rrCum.hwPipe)}</text>`;
+    } else {
+      if(rrOwn.sewPipe) b+=`<text x="${x+w/4}"   y="${y+38}" text-anchor="middle" fill="#e05c5c" font-size="8.5" font-family="Malgun Gothic,sans-serif">${ps(rrOwn.sewPipe)}</text>`;
+      if(rrOwn.wstPipe) b+=`<text x="${x+w/4}"   y="${y+51}" text-anchor="middle" fill="#a07cf7" font-size="8.5" font-family="Malgun Gothic,sans-serif">${ps(rrOwn.wstPipe)}</text>`;
+      if(rrCum.sewPipe) b+=`<text x="${x+3*w/4}" y="${y+38}" text-anchor="middle" fill="#e05c5c" font-size="8.5" font-family="Malgun Gothic,sans-serif">${ps(rrCum.sewPipe)}</text>`;
+      if(rrCum.wstPipe) b+=`<text x="${x+3*w/4}" y="${y+51}" text-anchor="middle" fill="#a07cf7" font-size="8.5" font-family="Malgun Gothic,sans-serif">${ps(rrCum.wstPipe)}</text>`;
+    }
   }
   return b;
 }
