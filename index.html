@@ -1409,10 +1409,19 @@ function loadJSON(e){
     try{
       const d=JSON.parse(ev.target.result);
       Object.assign(S,d);
+      // 구 버전(groups/sgs) → 새 버전(floors/risers/main) 마이그레이션
+      for(const t of['cw','dr']){
+        if(!S[t].floors)  S[t].floors  = S[t].groups || [];
+        if(!S[t].risers)  S[t].risers  = [];
+        if(!S[t].main)    S[t].main    = {riserIds:[],floorIds:[],zoneIds:[]};
+        // 구버전 키 제거
+        delete S[t].groups; delete S[t].sgs;
+      }
+      if(!S.mainLocation) S.mainLocation='bottom';
       let mx=0;
       function scanId(o){
         if(!o) return;
-        if(o.id){const n=parseInt(o.id.slice(1));if(n>mx)mx=n;}
+        if(o.id){const n=parseInt(o.id.slice(1));if(!isNaN(n)&&n>mx)mx=n;}
       }
       S.zones.forEach(z=>{
         scanId(z);
@@ -1423,7 +1432,7 @@ function loadJSON(e){
       document.getElementById('projectName').value=S.projectName||'';
       activeZone=S.zones[0]?.id||null;
       renderAll();
-    }catch(ex){alert('JSON 파일 형식이 올바르지 않습니다.');}
+    }catch(ex){console.error(ex);alert('JSON 파일을 불러오는데 실패했습니다.\n'+ex.message);}
   };
   r.readAsText(f); e.target.value='';
 }
