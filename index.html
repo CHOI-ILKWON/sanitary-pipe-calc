@@ -176,10 +176,11 @@ select:focus{outline:none;border-color:var(--accent)}
 </header>
 
 <div class="tabs-bar">
-  <button class="tab-btn active" onclick="switchTab(0)">① Zone 편집</button>
+  <button class="tab-btn active" onclick="switchTab(0)">① 개별 화장실</button>
   <button class="tab-btn" onclick="switchTab(1)">② 급수/급탕 연결</button>
   <button class="tab-btn" onclick="switchTab(2)">③ 오배수 연결</button>
-  <button class="tab-btn" onclick="switchTab(3)">④ 메인관 결과</button>
+  <button class="tab-btn" onclick="switchTab(3)">④ MAIN관</button>
+  <button class="tab-btn" onclick="switchTab(4)">⑤ 메인관 결과</button>
 </div>
 
 <div class="tab-pane active" id="tab0">
@@ -199,6 +200,9 @@ select:focus{outline:none;border-color:var(--accent)}
   </div>
 </div>
 <div class="tab-pane" id="tab3">
+  <div class="main-panel" id="mainPipePanel"></div>
+</div>
+<div class="tab-pane" id="tab4">
   <div class="main-panel" id="resultPanel"></div>
 </div>
 
@@ -206,7 +210,6 @@ select:focus{outline:none;border-color:var(--accent)}
 
 <script>
 // ── Constants ──────────────────────────────────────────────────────────────────
-const FLOORS = ['B2층','B1층','지하','1층','2층','3층','4층','5층','6층','RF층'];
 const FX_KEYS = ['wc_v','wc_t','ur_v','ur_t','bas_p','bas_i','shw','bath','sink','cls','fd','wsh'];
 const FX = {
   wc_v:  {name:'대변기(세정밸브)', cwQ:15, conn:25, hot:false, dfu:6,  drain:'sew', dc:100},
@@ -330,76 +333,99 @@ function zoneFxSummaryCard(z){
   return groups.map(g=>{const n=g.keys.reduce((s,k)=>s+(t[k]||0),0);return n?g.lbl+' '+n:'';}).filter(Boolean).join(' · ')||null;
 }
 
+// ── Simultaneous use factors ───────────────────────────────────────────────────
 function sewSimult(cnt){
-  if(cnt<=2)  return 1.0;
-  if(cnt<=5)  return 0.8;
-  if(cnt<=10) return 0.7;
-  if(cnt<=20) return 0.6;
-  if(cnt<=30) return 0.55;
-  return 0.5;
+  if(cnt<=2)  return 1.0; if(cnt<=5)  return 0.8; if(cnt<=10) return 0.7;
+  if(cnt<=20) return 0.6; if(cnt<=30) return 0.55; return 0.5;
 }
 function wstSimult(cnt){
-  if(cnt<=3)  return 1.0;
-  if(cnt<=6)  return 0.8;
-  if(cnt<=10) return 0.7;
-  if(cnt<=20) return 0.65;
-  return 0.6;
+  if(cnt<=3) return 1.0; if(cnt<=6) return 0.8; if(cnt<=10) return 0.7;
+  if(cnt<=20) return 0.65; return 0.6;
 }
 
-function calcCWGroup(g){
-  const zs=g.zoneIds.map(id=>S.zones.find(z=>z.id===id)).filter(Boolean);
-  let cwQ=0,hwQ=0;
-  for(const z of zs){const r=calcZone(z);cwQ+=r.cwQ;hwQ+=r.hwQ;}
-  if(zs.length>=2){cwQ*=0.9;hwQ*=0.9;}
-  return {cwQ,hwQ,cwPipe:flowPipe(cwQ),hwPipe:flowPipe(hwQ),cnt:zs.length};
+// ── Floor calc (no simultaneous factor — same floor) ──────────────────────────
+function calcFloor(floor, type){
+  const zs=floor.zoneIds.map(id=>S.zones.find(z=>z.id===id)).filter(Boolean);
+  let cwQ=0,hwQ=0,sD=0,wD=0;
+  for(const z of zs){const r=calcZone(z);cwQ+=r.cwQ;hwQ+=r.hwQ;sD+=r.sewDFU;wD+=r.wstDFU;}
+  return {cwQ,hwQ,sewDFU:sD,wstDFU:wD,
+    cwPipe:flowPipe(cwQ),hwPipe:flowPipe(hwQ),
+    sewPipe:sD>0?Math.max(sewPipe(sD),100):0,
+    wstPipe:wD>0?Math.max(wstPipe(wD),50):0, cnt:zs.length};
 }
-function calcDRGroup(g){
-  const zs=g.zoneIds.map(id=>S.zones.find(z=>z.id===id)).filter(Boolean);
-  let sD=0,wD=0,sewCnt=0,wstCnt=0;
-  for(const z of zs){
-    const r=calcZone(z); sD+=r.sewDFU; wD+=r.wstDFU;
-    const t=zoneFxTotals(z);
-    for(const k of FX_KEYS){
-      if(FX[k].drain==='sew') sewCnt+=t[k]||0;
-      else                    wstCnt+=t[k]||0;
+
+// ── Riser calc (floors + direct zones, with simultaneous factor) ──────────────
+function calcRiser(riser, type){
+  const floors=riser.floorIds.map(id=>S[type].floors.find(f=>f.id===id)).filter(Boolean);
+  const zones=riser.zoneIds.map(id=>S.zones.find(z=>z.id===id)).filter(Boolean);
+  let cwQ=0,hwQ=0,sD=0,wD=0,sewCnt=0,wstCnt=0;
+  for(const fl of floors){
+    const r=calcFloor(fl,type); cwQ+=r.cwQ;hwQ+=r.hwQ;sD+=r.sewDFU;wD+=r.wstDFU;
+    for(const zid of fl.zoneIds){
+      const z=S.zones.find(z=>z.id===zid);if(!z)continue;
+      const t=zoneFxTotals(z);
+      for(const k of FX_KEYS){ if(FX[k].drain==='sew')sewCnt+=t[k]||0; else wstCnt+=t[k]||0; }
     }
   }
-  const sf=sewSimult(sewCnt), wf=wstSimult(wstCnt);
-  const sDe=sD*sf, wDe=wD*wf;
-  return {
-    sewDFU:sDe, wstDFU:wDe,
-    sewPipe:sDe>0?Math.max(sewPipe(sDe),100):0,
-    wstPipe:wDe>0?Math.max(wstPipe(wDe),50):0,
-    cnt:zs.length, sewSimult:sf, wstSimult:wf,
-  };
+  for(const z of zones){
+    const r=calcZone(z);cwQ+=r.cwQ;hwQ+=r.hwQ;sD+=r.sewDFU;wD+=r.wstDFU;
+    const t=zoneFxTotals(z);
+    for(const k of FX_KEYS){ if(FX[k].drain==='sew')sewCnt+=t[k]||0; else wstCnt+=t[k]||0; }
+  }
+  const items=floors.length+zones.length;
+  if(items>=2){cwQ*=0.9;hwQ*=0.9;}
+  const sf=sewSimult(sewCnt),wf=wstSimult(wstCnt);
+  sD*=sf; wD*=wf;
+  return {cwQ,hwQ,sewDFU:sD,wstDFU:wD,
+    cwPipe:flowPipe(cwQ),hwPipe:flowPipe(hwQ),
+    sewPipe:sD>0?Math.max(sewPipe(sD),100):0,
+    wstPipe:wD>0?Math.max(wstPipe(wD),50):0,
+    cnt:items,sewSimult:sf,wstSimult:wf};
 }
-function assignedIds(groups){ const s=new Set(); for(const g of groups) for(const id of g.zoneIds) s.add(id); return s; }
 
-function calcCWMain(){
-  let cwQ=0,hwQ=0;
-  const gs=S.cw.groups;
-  if(gs.length){
-    for(const g of gs){const r=calcCWGroup(g);cwQ+=r.cwQ;hwQ+=r.hwQ;}
-    const aid=assignedIds(gs);
-    for(const z of S.zones) if(!aid.has(z.id)){const r=calcZone(z);cwQ+=r.cwQ;hwQ+=r.hwQ;}
-  } else {
-    for(const z of S.zones){const r=calcZone(z);cwQ+=r.cwQ;hwQ+=r.hwQ;}
-  }
-  cwQ*=0.85; hwQ*=0.85;
-  return {cwQ,hwQ,cwPipe:flowPipe(cwQ),hwPipe:flowPipe(hwQ)};
+// ── Zone IDs already allocated (anywhere in the hierarchy for a type) ─────────
+function allAssignedZoneIds(type){
+  const s=new Set();
+  function addFloorZones(fid){ const f=S[type].floors.find(f=>f.id===fid);if(f)for(const id of f.zoneIds)s.add(id);}
+  function addRiserAll(rid){ const r=S[type].risers.find(r=>r.id===rid);if(!r)return;
+    for(const id of r.zoneIds)s.add(id); for(const fid of r.floorIds)addFloorZones(fid);}
+  for(const f of S[type].floors) for(const id of f.zoneIds) s.add(id);
+  for(const r of S[type].risers){for(const id of r.zoneIds)s.add(id);for(const fid of r.floorIds)addFloorZones(fid);}
+  for(const id of S[type].main.zoneIds)s.add(id);
+  for(const fid of S[type].main.floorIds)addFloorZones(fid);
+  for(const rid of S[type].main.riserIds)addRiserAll(rid);
+  return s;
 }
-function calcDRMain(){
-  let sD=0,wD=0;
-  const gs=S.dr.groups;
-  if(gs.length){
-    for(const g of gs){const r=calcDRGroup(g);sD+=r.sewDFU;wD+=r.wstDFU;}
-    const aid=assignedIds(gs);
-    for(const z of S.zones) if(!aid.has(z.id)){const r=calcZone(z);sD+=r.sewDFU;wD+=r.wstDFU;}
-  } else {
-    for(const z of S.zones){const r=calcZone(z);sD+=r.sewDFU;wD+=r.wstDFU;}
-  }
-  sD*=0.85; wD*=0.85;
-  return {sewDFU:sD,wstDFU:wD,sewPipe:sD>0?Math.max(sewPipe(sD),100):0,wstPipe:wD>0?Math.max(wstPipe(wD),50):0};
+
+// Zones not in any floor (for a type) — available for riser direct or main
+function zonesNotInFloor(type, exceptFloorId){
+  const used=new Set();
+  for(const f of S[type].floors){if(f.id===exceptFloorId)continue;for(const id of f.zoneIds)used.add(id);}
+  return S.zones.filter(z=>!used.has(z.id));
+}
+
+// Floors not in any riser (for a type) — available for riser or main
+function floorsNotInRiser(type, exceptRiserId){
+  const used=new Set();
+  for(const r of S[type].risers){if(r.id===exceptRiserId)continue;for(const fid of r.floorIds)used.add(fid);}
+  return S[type].floors.filter(f=>!used.has(f.id));
+}
+
+// Main calc: everything assigned to main + anything still unassigned
+function calcMainType(type){
+  const main=S[type].main;
+  let cwQ=0,hwQ=0,sD=0,wD=0;
+  for(const rid of main.riserIds){const r=S[type].risers.find(r=>r.id===rid);if(r){const res=calcRiser(r,type);cwQ+=res.cwQ;hwQ+=res.hwQ;sD+=res.sewDFU;wD+=res.wstDFU;}}
+  for(const fid of main.floorIds){const f=S[type].floors.find(f=>f.id===fid);if(f){const res=calcFloor(f,type);cwQ+=res.cwQ;hwQ+=res.hwQ;sD+=res.sewDFU;wD+=res.wstDFU;}}
+  for(const zid of main.zoneIds){const z=S.zones.find(z=>z.id===zid);if(z){const res=calcZone(z);cwQ+=res.cwQ;hwQ+=res.hwQ;sD+=res.sewDFU;wD+=res.wstDFU;}}
+  // include still-unassigned zones
+  const aid=allAssignedZoneIds(type);
+  for(const z of S.zones){if(!aid.has(z.id)){const r=calcZone(z);cwQ+=r.cwQ;hwQ+=r.hwQ;sD+=r.sewDFU;wD+=r.wstDFU;}}
+  cwQ*=0.85;hwQ*=0.85;sD*=0.85;wD*=0.85;
+  return {cwQ,hwQ,sewDFU:sD,wstDFU:wD,
+    cwPipe:flowPipe(cwQ),hwPipe:flowPipe(hwQ),
+    sewPipe:sD>0?Math.max(sewPipe(sD),100):0,
+    wstPipe:wD>0?Math.max(wstPipe(wD),50):0};
 }
 
 // ── Pipe layout constants ──────────────────────────────────────────────────────
@@ -416,7 +442,7 @@ const uid=()=>'n'+(++_id);
 function newPipeNode(type){
   return {id:uid(), type, fxKey:null, qty:1, mainNext:null, branchNext:null};
 }
-function newZone(name,floor='1층'){
+function newZone(name,floor=''){
   const start=newPipeNode('start');
   return {
     id:uid(), name:name||'Zone 1', floor,
@@ -424,7 +450,13 @@ function newZone(name,floor='1층'){
   };
 }
 
-const S={projectName:'새 프로젝트',zones:[],cw:{groups:[],sgs:[]},dr:{groups:[],sgs:[]}};
+const S={
+  projectName:'새 프로젝트',
+  zones:[],
+  mainLocation:'bottom', // 'bottom'|'top'
+  cw:{floors:[],risers:[],main:{riserIds:[],floorIds:[],zoneIds:[]}},
+  dr:{floors:[],risers:[],main:{riserIds:[],floorIds:[],zoneIds:[]}}
+};
 let activeZone=null, activeTab=0;
 
 function findZone(id){return S.zones.find(z=>z.id===id)}
@@ -441,7 +473,8 @@ function renderTab(i){
   if(i===0){renderSidebar();renderEditor();}
   if(i===1){renderCWTab();}
   if(i===2){renderDRTab();}
-  if(i===3){renderResult();}
+  if(i===3){renderMainPipeTab();}
+  if(i===4){renderResult();}
 }
 function renderAll(){renderTab(activeTab);}
 
@@ -555,9 +588,15 @@ function renderPipeNode(id, n, p, zoneId, r){
   let pipeInfo='';
   if(n.type==='fixture' && n.fxKey && r){
     // Individual pipe: calc for just this fixture alone
+    // 샤워기는 배수를 FD(배수구)로 처리하므로 개별관에서 drain 제외
     const fxSingle=Object.fromEntries(FX_KEYS.map(k=>[k,0]));
     fxSingle[n.fxKey]=n.qty||1;
-    const sr=calcNode({fixtures:fxSingle, children:[]});
+    const singleNode={fixtures:fxSingle, children:[]};
+    if(n.fxKey==='shw'){
+      // 샤워기: 급수/급탕만, 배수(wst) 제외
+      const sr0=calcNode(singleNode);
+      var sr={...sr0, wstDFU:0, wstPipe:0};
+    } else { var sr=calcNode(singleNode); }
     pipeInfo=`<div class="pipe-both-cols">
       <div class="pipe-col">
         <div class="pipe-col-hdr">누적관</div>
@@ -729,7 +768,7 @@ function renderEditor(){
   let h=`<div class="zone-editor-top">
     <div class="zone-editor-row">
       <input class="zone-name-inp" value="${esc(zone.name)}" onchange="setZoneName('${zone.id}',this.value)" placeholder="Zone 이름">
-      <select onchange="setZoneFloor('${zone.id}',this.value)">${FLOORS.map(f=>`<option${f===zone.floor?' selected':''}>${f}</option>`).join('')}</select>
+      <input class="zone-name-inp" style="width:100px;font-size:13px;font-weight:400" value="${esc(zone.floor)}" placeholder="층 입력(예:1층)" onchange="setZoneFloor('${zone.id}',this.value)">
     </div>
     <div class="zone-chips" id="zone-chips-${zone.id}">${chipsHTML(r)}</div>
   </div>`;
@@ -847,13 +886,18 @@ function renderDRTab(){ connZoneList('drZoneList',false); connMain('drMain','dr'
 
 function connZoneList(elId,isCW){
   const el=document.getElementById(elId);
-  let h=`<div class="section-title">${isCW?'급수/급탕':'오배수'} Zone</div>`;
-  if(!S.zones.length){el.innerHTML=h+`<div class="empty" style="padding:16px 0">Zone 없음</div>`;return;}
+  const type=isCW?'cw':'dr';
+  let h=`<div class="section-title">${isCW?'급수/급탕':'오배수'} 화장실</div>`;
+  if(!S.zones.length){el.innerHTML=h+`<div class="empty" style="padding:16px 0">화장실 없음</div>`;return;}
   for(const z of S.zones){
     const r=calcZone(z);
+    const aid=allAssignedZoneIds(type);
+    const tag=aid.has(z.id)?'<span style="font-size:9px;color:var(--accent2)">✔ 배정</span>':'<span style="font-size:9px;color:var(--text2)">미배정</span>';
     h+=`<div class="conn-zone-item">
-      <div style="font-size:12px;font-weight:600;margin-bottom:3px">${esc(z.name)}</div>
-      <div style="font-size:11px;color:var(--text2);margin-bottom:4px">${z.floor}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
+        <span style="font-size:12px;font-weight:600">${esc(z.name)}</span>${tag}
+      </div>
+      <div style="font-size:11px;color:var(--text2);margin-bottom:4px">${z.floor||'층 미입력'}</div>
       <div style="display:flex;gap:4px;flex-wrap:wrap">
         ${isCW
           ?`<span class="badge ${r.cwPipe?'badge-cw':'badge-na'}">${ps(r.cwPipe)}</span><span class="badge ${r.hwPipe?'badge-hw':'badge-na'}">${ps(r.hwPipe)}</span>`
@@ -867,92 +911,199 @@ function connZoneList(elId,isCW){
 function connMain(elId,type){
   const el=document.getElementById(elId);
   const isCW=type==='cw';
-  const groups=S[type].groups, sgs=S[type].sgs;
+  const floors=S[type].floors;
+  const risers=S[type].risers;
 
+  // ── 층별 설정 ──────────────────────────────────────────────────────────────
   let h=`<div class="section">
-    <div class="fr mb"><span class="section-title" style="margin:0">그룹 설정</span>
-      <button class="btn btn-primary btn-sm ml" onclick="addGroup('${type}')">+ 그룹 추가</button></div>`;
-  if(!groups.length){
-    h+=`<div class="empty" style="padding:20px 0">그룹이 없습니다. Zone을 묶어 관경을 계산하세요.</div>`;
+    <div class="fr mb"><span class="section-title" style="margin:0">층별 설정</span>
+      <button class="btn btn-primary btn-sm ml" onclick="addFloor('${type}')">+ 층 추가</button></div>`;
+  if(!floors.length){
+    h+=`<div class="empty" style="padding:16px 0">층을 추가하여 화장실을 배정하세요.</div>`;
   } else {
-    for(const g of groups){
-      const gr=isCW?calcCWGroup(g):calcDRGroup(g);
+    for(const fl of floors){
+      const fr=calcFloor(fl,type);
+      // show only zones not already in another floor
+      const available=zonesNotInFloor(type, fl.id);
       h+=`<div class="group-card">
         <div class="group-hdr">
-          <input class="group-name-inp" value="${esc(g.name)}" onchange="setGroupName('${type}','${g.id}',this.value)">
+          <input class="group-name-inp" value="${esc(fl.name)}" onchange="setFloorName('${type}','${fl.id}',this.value)">
           <div style="display:flex;gap:4px;flex-wrap:wrap">
             ${isCW
-              ?`<span class="badge badge-cw">${ps(gr.cwPipe)} · ${gr.cwQ.toFixed(1)}L/min</span>
-                <span class="badge badge-hw">${ps(gr.hwPipe)} · ${gr.hwQ.toFixed(1)}L/min</span>`
-              :`<span class="badge badge-sew">${ps(gr.sewPipe)} · ${gr.sewDFU.toFixed(1)}DFU</span>
-                <span class="badge badge-wst">${ps(gr.wstPipe)} · ${gr.wstDFU.toFixed(1)}DFU</span>`
+              ?`<span class="badge badge-cw">${ps(fr.cwPipe)} · ${fr.cwQ.toFixed(1)}L/min</span>
+                <span class="badge badge-hw">${ps(fr.hwPipe)} · ${fr.hwQ.toFixed(1)}L/min</span>`
+              :`<span class="badge badge-sew">${ps(fr.sewPipe)} · ${fr.sewDFU.toFixed(1)}DFU</span>
+                <span class="badge badge-wst">${ps(fr.wstPipe)} · ${fr.wstDFU.toFixed(1)}DFU</span>`
             }
-            ${isCW&&g.zoneIds.length>=2?`<span class="badge badge-na">동시사용율 90%</span>`:''}
-            ${!isCW?`<span class="badge badge-na">오수 ${(gr.sewSimult*100).toFixed(0)}% / 배수 ${(gr.wstSimult*100).toFixed(0)}%</span>`:''}
           </div>
-          <button class="btn btn-danger btn-sm ml" onclick="delGroup('${type}','${g.id}')">삭제</button>
+          <button class="btn btn-danger btn-sm ml" onclick="delFloor('${type}','${fl.id}')">삭제</button>
         </div>
         <div class="zone-check-list">
-          ${S.zones.map(z=>`<label class="zone-check-item">
-            <input type="checkbox" ${g.zoneIds.includes(z.id)?'checked':''}
-              onchange="toggleZone('${type}','${g.id}','${z.id}',this.checked)">
+          ${available.map(z=>`<label class="zone-check-item">
+            <input type="checkbox" ${fl.zoneIds.includes(z.id)?'checked':''}
+              onchange="toggleFloorZone('${type}','${fl.id}','${z.id}',this.checked)">
             <span>${esc(z.name)}</span>
-            <span style="color:var(--text2);font-size:11px">${z.floor}</span>
+            <span style="color:var(--text2);font-size:11px">${z.floor||''}</span>
           </label>`).join('')}
+          ${available.length===0?`<div style="font-size:11px;color:var(--text2);padding:6px 0">배정 가능한 화장실 없음</div>`:''}
         </div></div>`;
     }
   }
   h+=`</div>`;
 
+  // ── 입상관 설정 ────────────────────────────────────────────────────────────
   h+=`<div class="section">
-    <div class="fr mb"><span class="section-title" style="margin:0">누적 관경 확인</span>
-      <button class="btn btn-ghost btn-sm ml" onclick="addSG('${type}')">+ 행 추가</button></div>`;
-  if(!sgs.length){
-    h+=`<div class="empty" style="padding:16px 0">그룹 순서를 설정해 관경 변화를 확인하세요.</div>`;
+    <div class="fr mb"><span class="section-title" style="margin:0">입상관 설정</span>
+      <button class="btn btn-primary btn-sm ml" onclick="addRiser('${type}')">+ 입상관 추가</button></div>`;
+  if(!risers.length){
+    h+=`<div class="empty" style="padding:16px 0">입상관을 추가하여 층 또는 화장실을 배정하세요.</div>`;
   } else {
-    h+=`<table><thead><tr><th>#</th><th>누적 그룹</th>
-      ${isCW?'<th>급수</th><th>급탕</th><th>유량(L/min)</th>':'<th>오수관</th><th>배수관</th><th>DFU</th>'}
-    </tr></thead><tbody>`;
-    let cCw=0,cHw=0,cSew=0,cWst=0;
-    for(let i=0;i<sgs.length;i++){
-      const sg=sgs[i];
-      if(sg.groupId){
-        const g=groups.find(g=>g.id===sg.groupId);
-        if(g){
-          if(isCW){const gr=calcCWGroup(g);cCw+=gr.cwQ;cHw+=gr.hwQ;}
-          else{const gr=calcDRGroup(g);cSew+=gr.sewDFU;cWst+=gr.wstDFU;}
-        }
-      }
-      h+=`<tr><td>${i+1}</td>
-        <td><div style="display:flex;align-items:center;gap:6px">
-          <select onchange="setSGGroup('${type}','${sg.id}',this.value)">
-            <option value="">-- 선택 --</option>
-            ${groups.map(g=>`<option value="${g.id}"${sg.groupId===g.id?' selected':''}>${esc(g.name)}</option>`).join('')}
-          </select>
-          <button class="btn btn-danger btn-sm" onclick="delSG('${type}','${sg.id}')">✕</button>
-        </div></td>`;
-      if(isCW){
-        h+=`<td><span class="badge badge-cw">${ps(flowPipe(cCw))}</span></td>
-            <td><span class="badge badge-hw">${ps(flowPipe(cHw))}</span></td>
-            <td>${cCw.toFixed(1)} / ${cHw.toFixed(1)}</td>`;
-      } else {
-        h+=`<td><span class="badge badge-sew">${ps(cSew>0?Math.max(sewPipe(cSew),100):0)}</span></td>
-            <td><span class="badge badge-wst">${ps(cWst>0?Math.max(wstPipe(cWst),50):0)}</span></td>
-            <td>${cSew.toFixed(1)} / ${cWst.toFixed(1)}</td>`;
-      }
-      h+=`</tr>`;
+    for(const ri of risers){
+      const rr=calcRiser(ri,type);
+      const availFloors=floorsNotInRiser(type,ri.id);
+      // zones not in any floor and not in another riser's zoneIds
+      const usedByOther=new Set();
+      for(const r2 of risers){if(r2.id===ri.id)continue;for(const id of r2.zoneIds)usedByOther.add(id);}
+      const floorZoneSet=new Set();
+      for(const f of floors) for(const id of f.zoneIds) floorZoneSet.add(id);
+      const availZones=S.zones.filter(z=>!floorZoneSet.has(z.id)&&!usedByOther.has(z.id));
+      h+=`<div class="group-card">
+        <div class="group-hdr">
+          <input class="group-name-inp" value="${esc(ri.name)}" onchange="setRiserName('${type}','${ri.id}',this.value)">
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            ${isCW
+              ?`<span class="badge badge-cw">${ps(rr.cwPipe)} · ${rr.cwQ.toFixed(1)}L/min</span>
+                <span class="badge badge-hw">${ps(rr.hwPipe)} · ${rr.hwQ.toFixed(1)}L/min</span>
+                ${rr.cnt>=2?`<span class="badge badge-na">동시사용율 90%</span>`:''}`
+              :`<span class="badge badge-sew">${ps(rr.sewPipe)} · ${rr.sewDFU.toFixed(1)}DFU</span>
+                <span class="badge badge-wst">${ps(rr.wstPipe)} · ${rr.wstDFU.toFixed(1)}DFU</span>
+                <span class="badge badge-na">오수 ${((rr.sewSimult||1)*100).toFixed(0)}% / 배수 ${((rr.wstSimult||1)*100).toFixed(0)}%</span>`
+            }
+          </div>
+          <button class="btn btn-danger btn-sm ml" onclick="delRiser('${type}','${ri.id}')">삭제</button>
+        </div>
+        <div style="padding:8px 12px 4px;font-size:11px;color:var(--text2)">▸ 층 배정</div>
+        <div class="zone-check-list">
+          ${availFloors.map(f=>`<label class="zone-check-item">
+            <input type="checkbox" ${ri.floorIds.includes(f.id)?'checked':''}
+              onchange="toggleRiserFloor('${type}','${ri.id}','${f.id}',this.checked)">
+            <span>${esc(f.name)}</span>
+            <span style="font-size:10px;color:var(--text2)">${f.zoneIds.length}개 화장실</span>
+          </label>`).join('')}
+          ${availFloors.length===0?`<div style="font-size:11px;color:var(--text2);padding:4px 12px">배정 가능한 층 없음</div>`:''}
+        </div>
+        ${availZones.length?`<div style="padding:8px 12px 4px;font-size:11px;color:var(--text2)">▸ 직접 배정 (층 미지정 화장실)</div>
+        <div class="zone-check-list">
+          ${availZones.map(z=>`<label class="zone-check-item">
+            <input type="checkbox" ${ri.zoneIds.includes(z.id)?'checked':''}
+              onchange="toggleRiserZone('${type}','${ri.id}','${z.id}',this.checked)">
+            <span>${esc(z.name)}</span>
+            <span style="color:var(--text2);font-size:11px">${z.floor||''}</span>
+          </label>`).join('')}
+        </div>`:''}
+      </div>`;
     }
-    h+=`</tbody></table>`;
   }
   h+=`</div>`;
   el.innerHTML=h;
 }
 
-// ── Tab 4 ──────────────────────────────────────────────────────────────────────
+// ── Tab 4: MAIN관 설정 ────────────────────────────────────────────────────────
+function renderMainPipeTab(){
+  const el=document.getElementById('mainPipePanel');
+  if(!el) return;
+  let h=`<div style="padding:16px;overflow-y:auto;flex:1">`;
+  h+=`<div class="fr mb" style="align-items:center;gap:16px">
+    <span class="section-title" style="margin:0">MAIN관 설정</span>
+    <label style="font-size:12px;color:var(--text2)">메인관 위치:
+      <select style="margin-left:6px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 8px;font-size:12px"
+        onchange="S.mainLocation=this.value;renderAll()">
+        <option value="bottom"${S.mainLocation==='bottom'?' selected':''}>지하/하부 (하향식)</option>
+        <option value="top"${S.mainLocation==='top'?' selected':''}>옥상/상부 (상향식)</option>
+      </select>
+    </label>
+  </div>`;
+
+  for(const type of ['cw','dr']){
+    const isCW=type==='cw';
+    const main=S[type].main;
+    const risers=S[type].risers;
+    const floors=S[type].floors;
+    // Items assignable to main: unassigned risers, unassigned floors, unassigned zones
+    const usedRisers=new Set(main.riserIds);
+    const usedFloors=new Set(main.floorIds);
+    const usedZones=new Set(main.zoneIds);
+    // floors already in a riser
+    const floorInRiser=new Set();
+    for(const r of risers) for(const fid of r.floorIds) floorInRiser.add(fid);
+    // zones already in a floor
+    const zoneInFloor=new Set();
+    for(const f of floors) for(const zid of f.zoneIds) zoneInFloor.add(zid);
+    // zones already in a riser (direct)
+    const zoneInRiser=new Set();
+    for(const r of risers) for(const zid of r.zoneIds) zoneInRiser.add(zid);
+
+    const freeRisers=risers.filter(r=>!usedRisers.has(r.id));
+    const freeFloors=floors.filter(f=>!floorInRiser.has(f.id)&&!usedFloors.has(f.id));
+    const freeZones=S.zones.filter(z=>!zoneInFloor.has(z.id)&&!zoneInRiser.has(z.id)&&!usedZones.has(z.id));
+
+    h+=`<div class="section">
+      <div class="section-title">${isCW?'급수/급탕':'오배수'} MAIN관 배정</div>
+      <div style="font-size:11px;color:var(--text2);margin-bottom:10px">미배정 입상관·층·화장실이 자동으로 MAIN관에 포함됩니다. 아래에서 명시적으로 추가 배정할 항목을 선택하세요.</div>`;
+
+    if(freeRisers.length){
+      h+=`<div style="font-size:11px;font-weight:600;color:var(--accent2);margin-bottom:6px">▸ 입상관</div>
+      <div class="zone-check-list">
+        ${freeRisers.map(r=>`<label class="zone-check-item">
+          <input type="checkbox" ${main.riserIds.includes(r.id)?'checked':''}
+            onchange="toggleMainItem('${type}','riser','${r.id}',this.checked)">
+          <span>${esc(r.name)}</span>
+          <span style="font-size:10px;color:var(--text2)">${r.floorIds.length}층 ${r.zoneIds.length}개 직접배정</span>
+        </label>`).join('')}
+      </div>`;
+    }
+    if(freeFloors.length){
+      h+=`<div style="font-size:11px;font-weight:600;color:var(--warn);margin-bottom:6px;margin-top:10px">▸ 층 (입상관 미배정)</div>
+      <div class="zone-check-list">
+        ${freeFloors.map(f=>`<label class="zone-check-item">
+          <input type="checkbox" ${main.floorIds.includes(f.id)?'checked':''}
+            onchange="toggleMainItem('${type}','floor','${f.id}',this.checked)">
+          <span>${esc(f.name)}</span>
+          <span style="font-size:10px;color:var(--text2)">${f.zoneIds.length}개 화장실</span>
+        </label>`).join('')}
+      </div>`;
+    }
+    if(freeZones.length){
+      h+=`<div style="font-size:11px;font-weight:600;color:var(--accent);margin-bottom:6px;margin-top:10px">▸ 화장실 (층/입상관 미배정)</div>
+      <div class="zone-check-list">
+        ${freeZones.map(z=>`<label class="zone-check-item">
+          <input type="checkbox" ${main.zoneIds.includes(z.id)?'checked':''}
+            onchange="toggleMainItem('${type}','zone','${z.id}',this.checked)">
+          <span>${esc(z.name)}</span>
+          <span style="font-size:10px;color:var(--text2)">${z.floor||''}</span>
+        </label>`).join('')}
+      </div>`;
+    }
+    if(!freeRisers.length&&!freeFloors.length&&!freeZones.length){
+      h+=`<div class="empty" style="padding:12px 0">모든 항목이 입상관에 배정되었습니다.</div>`;
+    }
+    h+=`</div>`;
+  }
+  h+=`</div>`;
+  el.innerHTML=h;
+}
+
+// ── Tab 5: 메인관 결과 (계통도) ────────────────────────────────────────────────
 function renderResult(){
   const el=document.getElementById('resultPanel');
-  const cm=calcCWMain(), dm=calcDRMain();
-  let h=`<div class="result-grid">
+  const cm=calcMainType('cw'), dm=calcMainType('dr');
+  const locLabel=S.mainLocation==='top'?'옥상/상부':'지하/하부';
+  let h=`<div style="padding:16px;overflow-y:auto;flex:1">
+  <div class="fr mb" style="align-items:center;gap:16px">
+    <span class="result-card-title" style="font-size:15px">메인관 결과</span>
+    <span style="font-size:11px;color:var(--text2)">메인관 위치: <b style="color:var(--warn)">${locLabel}</b></span>
+  </div>
+  <div class="result-grid">
     <div class="result-card">
       <div class="result-card-title">급수 메인관</div>
       <div class="result-pipe-big" style="color:var(--accent)">${ps(cm.cwPipe)}</div>
@@ -975,82 +1126,201 @@ function renderResult(){
       </div>
     </div>
   </div>
-  <div class="section"><div class="section-title">급수/급탕 계통도</div>${mainSVG(true)}</div>
-  <div class="section"><div class="section-title">오배수 계통도</div>${mainSVG(false)}</div>`;
+  <div class="section"><div class="section-title">급수/급탕 계통도</div>${schematicSVG('cw')}</div>
+  <div class="section"><div class="section-title">오배수 계통도</div>${schematicSVG('dr')}</div>
+  </div>`;
   el.innerHTML=h;
 }
 
-function mainSVG(isCW){
-  const groups=S[isCW?'cw':'dr'].groups;
-  const mainR=isCW?calcCWMain():calcDRMain();
-  const NW2=140,NH2=66,HG2=44,VG2=10;
-  const aid=assignedIds(groups);
-  const unassigned=S.zones.filter(z=>!aid.has(z.id));
-  const gnodes=groups.map(g=>{
-    const gr=isCW?calcCWGroup(g):calcDRGroup(g);
-    return {name:g.name,r:gr,zones:g.zoneIds.map(id=>S.zones.find(z=>z.id===id)).filter(Boolean)};
-  });
-  if(unassigned.length){
-    const ur={cwQ:0,hwQ:0,sewDFU:0,wstDFU:0};
-    for(const z of unassigned){const r=calcZone(z);ur.cwQ+=r.cwQ;ur.hwQ+=r.hwQ;ur.sewDFU+=r.sewDFU;ur.wstDFU+=r.wstDFU;}
-    ur.cwPipe=flowPipe(ur.cwQ);ur.hwPipe=flowPipe(ur.hwQ);
-    ur.sewPipe=ur.sewDFU>0?Math.max(sewPipe(ur.sewDFU),100):0;
-    ur.wstPipe=ur.wstDFU>0?Math.max(wstPipe(ur.wstDFU),50):0;
-    gnodes.push({name:'미배정',r:ur,zones:unassigned});
+// ── Schematic SVG (계통도) ────────────────────────────────────────────────────
+function schematicSVG(type){
+  const isCW=type==='cw';
+  if(!S.zones.length) return `<div class="empty">화장실 데이터가 없습니다.</div>`;
+  const isTop=S.mainLocation==='top';
+
+  // Build hierarchy: main → risers → floors → zones
+  // Collect nodes for display
+  const NW=130, NH=60, HGAP=30, VGAP=12;
+  // Columns: zones(col3) → floors(col2) → risers(col1) → main(col0)
+  // When top: main at top, zones at bottom. When bottom: main at bottom, zones at top.
+
+  // Gather all items in order
+  const rows=[];  // each row = one zone-level row
+  const mainR=calcMainType(type);
+
+  function pushZone(z, floorLabel, riserLabel){
+    rows.push({zone:z, floorLabel, riserLabel, zr:calcZone(z)});
   }
-  if(!gnodes.length&&!S.zones.length) return `<div class="empty">Zone 데이터가 없습니다.</div>`;
-  const x0=10,x1=x0+NW2+HG2,x2=x1+NW2+HG2;
-  let totZ=0; for(const g of gnodes) totZ+=Math.max(1,g.zones.length);
-  const svgH=Math.max(NH2+40,totZ*(NH2+VG2)+20);
-  const svgW=x2+NW2+160;
-  let buf='';
-  const mcy=svgH/2;
-  buf+=mnode(x0,mcy-NH2/2,NW2,NH2,'기계실/메인관',mainR,isCW,'#f7a64f');
-  let cy=10;
-  for(const gn of gnodes){
-    const zc=Math.max(1,gn.zones.length);
-    const gh=zc*(NH2+VG2)-VG2;
-    const gy=cy+gh/2-NH2/2;
-    buf+=mnode(x1,gy,NW2,NH2,gn.name,gn.r,isCW,'#38c9a0');
-    buf+=`<line x1="${x0+NW2}" y1="${mcy}" x2="${x1}" y2="${gy+NH2/2}" stroke="#2e3350" stroke-width="1.5"/>`;
-    let zy=cy;
-    for(const z of gn.zones){
-      const zr=calcZone(z);
-      buf+=mnode(x2,zy,NW2,NH2,z.name,zr,isCW,'#4f8ef7');
-      buf+=`<line x1="${x1+NW2}" y1="${gy+NH2/2}" x2="${x2}" y2="${zy+NH2/2}" stroke="#2e3350" stroke-width="1.5"/>`;
-      zy+=NH2+VG2;
+  function pushEmptyRow(floorLabel, riserLabel){
+    rows.push({zone:null, floorLabel, riserLabel, zr:null});
+  }
+
+  // Process risers in order
+  const usedFloorIds=new Set();
+  const usedZoneIds=new Set();
+
+  for(const ri of S[type].risers){
+    const rr=calcRiser(ri,type);
+    let riserRows=[];
+    for(const fid of ri.floorIds){
+      const fl=S[type].floors.find(f=>f.id===fid);
+      if(!fl){continue;}
+      usedFloorIds.add(fid);
+      if(fl.zoneIds.length){
+        for(const zid of fl.zoneIds){
+          const z=S.zones.find(z=>z.id===zid);
+          if(z){usedZoneIds.add(zid);riserRows.push({zone:z,floorLabel:fl.name,riserLabel:ri.name,zr:calcZone(z),rr,fr:calcFloor(fl,type)});}
+        }
+      } else {
+        riserRows.push({zone:null,floorLabel:fl.name,riserLabel:ri.name,zr:null,rr,fr:calcFloor(fl,type)});
+      }
     }
-    if(!gn.zones.length) zy+=NH2+VG2;
-    cy=zy;
+    for(const zid of ri.zoneIds){
+      const z=S.zones.find(z=>z.id===zid);
+      if(z){usedZoneIds.add(zid);riserRows.push({zone:z,floorLabel:'직접',riserLabel:ri.name,zr:calcZone(z),rr,fr:null});}
+    }
+    if(!riserRows.length) riserRows.push({zone:null,floorLabel:'',riserLabel:ri.name,zr:null,rr,fr:null});
+    rows.push(...riserRows);
   }
-  return `<div style="overflow-x:auto"><svg width="${svgW}" height="${svgH+20}" style="display:block">${buf}</svg></div>`;
+
+  // Floors not in risers
+  for(const fl of S[type].floors){
+    if(usedFloorIds.has(fl.id)) continue;
+    if(fl.zoneIds.length){
+      for(const zid of fl.zoneIds){
+        const z=S.zones.find(z=>z.id===zid);
+        if(z){usedZoneIds.add(zid);rows.push({zone:z,floorLabel:fl.name,riserLabel:'직결',zr:calcZone(z),rr:null,fr:calcFloor(fl,type)});}
+      }
+    } else {
+      rows.push({zone:null,floorLabel:fl.name,riserLabel:'직결',zr:null,rr:null,fr:calcFloor(fl,type)});
+    }
+  }
+
+  // Zones not in any floor or riser
+  for(const z of S.zones){
+    if(!usedZoneIds.has(z.id)) rows.push({zone:z,floorLabel:'직결',riserLabel:'직결',zr:calcZone(z),rr:null,fr:null});
+  }
+
+  if(!rows.length) return `<div class="empty">배정된 항목이 없습니다.</div>`;
+
+  const totalRows=rows.length;
+  const svgH=Math.max(totalRows*(NH+VGAP)+VGAP+40, NH+80);
+  const x0=10, x1=x0+NW+HGAP, x2=x1+NW+HGAP, x3=x2+NW+HGAP;
+  const svgW=x3+NW+40;
+
+  let buf='';
+  // Main node
+  const mainY=isTop?10:svgH-NH-10;
+  const mainCy=mainY+NH/2;
+  buf+=snode(x0,mainY,NW,NH,'MAIN관',mainR,isCW,'#f7a64f');
+
+  // Group rows by riser
+  let riserGrouped=[];
+  let curRiser=null, curRiserStart=0;
+  for(let i=0;i<rows.length;i++){
+    const rl=rows[i].riserLabel;
+    if(rl!==curRiser){
+      if(curRiser!==null) riserGrouped.push({label:curRiser,start:curRiserStart,end:i-1,rr:rows[curRiserStart].rr});
+      curRiser=rl; curRiserStart=i;
+    }
+  }
+  if(curRiser!==null) riserGrouped.push({label:curRiser,start:curRiserStart,end:rows.length-1,rr:rows[curRiserStart].rr});
+
+  // Group rows by floor within riser
+  function rowY(i){ return isTop?(i*(NH+VGAP)+VGAP+40):(svgH-40-(totalRows-i)*(NH+VGAP)); }
+
+  for(const rg of riserGrouped){
+    const ry1=rowY(rg.start)+NH/2, ry2=rowY(rg.end)+NH/2;
+    const rcy=(ry1+ry2)/2;
+    const rry=rcy-NH/2;
+    const rr=rg.rr;
+    if(rg.label!=='직결'){
+      buf+=snode(x1,rry,NW,NH,rg.label,rr,isCW,'#38c9a0');
+      // main→riser line
+      buf+=hline(x0+NW,mainCy,x1,rcy);
+    }
+
+    // Group by floor within riser group
+    let curFloor=null, curFloorStart=rg.start;
+    const floorGroups=[];
+    for(let i=rg.start;i<=rg.end;i++){
+      const fl=rows[i].floorLabel;
+      if(fl!==curFloor){
+        if(curFloor!==null) floorGroups.push({label:curFloor,start:curFloorStart,end:i-1,fr:rows[curFloorStart].fr});
+        curFloor=fl; curFloorStart=i;
+      }
+    }
+    if(curFloor!==null) floorGroups.push({label:curFloor,start:curFloorStart,end:rg.end,fr:rows[curFloorStart].fr});
+
+    for(const fg of floorGroups){
+      const fy1=rowY(fg.start)+NH/2, fy2=rowY(fg.end)+NH/2;
+      const fcy=(fy1+fy2)/2, fry=fcy-NH/2;
+      const fr=fg.fr;
+      if(fg.label!=='직결'&&fg.label!=='직접'){
+        buf+=snode(x2,fry,NW,NH,fg.label,fr,isCW,'#4f8ef7');
+        const fromX=rg.label==='직결'?x0+NW:x1+NW;
+        const fromCy=rg.label==='직결'?mainCy:rcy;
+        buf+=hline(fromX,fromCy,x2,fcy);
+      }
+      // Zone nodes
+      for(let i=fg.start;i<=fg.end;i++){
+        const row=rows[i];
+        if(!row.zone) continue;
+        const zy=rowY(i);
+        buf+=snode(x3,zy,NW,NH,row.zone.name,row.zr,isCW,'#7c9cf7');
+        let fromX2, fromCy2;
+        if(fg.label==='직결'||fg.label==='직접'){
+          fromX2=rg.label==='직결'?x0+NW:x1+NW;
+          fromCy2=rg.label==='직결'?mainCy:rcy;
+        } else { fromX2=x2+NW; fromCy2=fcy; }
+        buf+=hline(fromX2,fromCy2,x3,zy+NH/2);
+      }
+    }
+  }
+
+  // Pipe size labels on main backbone
+  buf+=pipeLabel(x0+4,mainY+NH+4,mainR,isCW,'top');
+
+  return `<div style="overflow:auto"><svg width="${svgW}" height="${svgH}" style="display:block;min-width:${svgW}px">${buf}</svg></div>`;
 }
 
-function mnode(x,y,w,h,name,r,isCW,bc){
+function hline(x1,y1,x2,y2){
+  const mx=(x1+x2)/2;
+  return `<path d="M${x1},${y1} L${mx},${y1} L${mx},${y2} L${x2},${y2}" fill="none" stroke="#3a4060" stroke-width="1.5"/>`;
+}
+
+function snode(x,y,w,h,name,r,isCW,bc){
   const cx=x+w/2;
-  let b=`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="6" fill="#1a1d27" stroke="${bc}88" stroke-width="1.5"/>`;
-  b+=`<text x="${cx}" y="${y+14}" text-anchor="middle" fill="#e8ecf4" font-size="10" font-weight="600">${esc(name)}</text>`;
+  let b=`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="5" fill="#1a1d27" stroke="${bc}" stroke-width="1.5"/>`;
+  b+=`<text x="${cx}" y="${y+13}" text-anchor="middle" fill="#e8ecf4" font-size="10" font-weight="700" font-family="Malgun Gothic">${esc(name)}</text>`;
+  if(!r) return b;
   if(isCW){
-    b+=`<text x="${x+5}" y="${y+h-26}" fill="#4f8ef7" font-size="9" font-weight="600">급수 ${ps(r.cwPipe)} ${(r.cwQ||0).toFixed(1)}L/min</text>`;
-    b+=`<text x="${x+5}" y="${y+h-13}" fill="#e05c8a" font-size="9" font-weight="600">급탕 ${ps(r.hwPipe)} ${(r.hwQ||0).toFixed(1)}L/min</text>`;
+    if(r.cwPipe)  b+=`<text x="${x+5}" y="${y+27}" fill="#4f8ef7"  font-size="9" font-family="Malgun Gothic">급수 ${ps(r.cwPipe)} ${(r.cwQ||0).toFixed(1)}L/m</text>`;
+    if(r.hwPipe)  b+=`<text x="${x+5}" y="${y+39}" fill="#e05c8a"  font-size="9" font-family="Malgun Gothic">급탕 ${ps(r.hwPipe)} ${(r.hwQ||0).toFixed(1)}L/m</text>`;
   } else {
-    b+=`<text x="${x+5}" y="${y+h-26}" fill="#e05c5c" font-size="9" font-weight="600">오수 ${ps(r.sewPipe)} ${(r.sewDFU||0).toFixed(1)}DFU</text>`;
-    b+=`<text x="${x+5}" y="${y+h-13}" fill="#a07cf7" font-size="9" font-weight="600">배수 ${ps(r.wstPipe)} ${(r.wstDFU||0).toFixed(1)}DFU</text>`;
+    if(r.sewPipe) b+=`<text x="${x+5}" y="${y+27}" fill="#e05c5c"  font-size="9" font-family="Malgun Gothic">오수 ${ps(r.sewPipe)} ${(r.sewDFU||0).toFixed(1)}DFU</text>`;
+    if(r.wstPipe) b+=`<text x="${x+5}" y="${y+39}" fill="#a07cf7"  font-size="9" font-family="Malgun Gothic">배수 ${ps(r.wstPipe)} ${(r.wstDFU||0).toFixed(1)}DFU</text>`;
   }
   return b;
 }
 
+function pipeLabel(x,y,r,isCW,pos){return '';} // reserved for future inline labels
+
 // ── Zone actions ───────────────────────────────────────────────────────────────
 function addZone(){
-  showModal('Zone 이름','새 Zone 추가',v=>{
-    const z=newZone(v||'Zone '+(S.zones.length+1));
+  showModal('화장실 이름','새 화장실 추가',v=>{
+    const z=newZone(v||'화장실 '+(S.zones.length+1));
     S.zones.push(z); activeZone=z.id; renderAll();
   });
 }
 function delZone(id){
-  if(!confirm('Zone을 삭제하시겠습니까?')) return;
+  if(!confirm('화장실을 삭제하시겠습니까?')) return;
   S.zones=S.zones.filter(z=>z.id!==id);
-  for(const t of['cw','dr']) for(const g of S[t].groups) g.zoneIds=g.zoneIds.filter(i=>i!==id);
+  for(const t of['cw','dr']){
+    for(const f of S[t].floors) f.zoneIds=f.zoneIds.filter(i=>i!==id);
+    for(const r of S[t].risers) r.zoneIds=r.zoneIds.filter(i=>i!==id);
+    S[t].main.zoneIds=S[t].main.zoneIds.filter(i=>i!==id);
+  }
   if(activeZone===id) activeZone=S.zones[0]?.id||null;
   renderAll();
 }
@@ -1058,29 +1328,60 @@ function selZone(id){activeZone=id;renderSidebar();renderEditor();}
 function setZoneName(id,v){const z=findZone(id);if(z){z.name=v;renderSidebar();}}
 function setZoneFloor(id,v){const z=findZone(id);if(z){z.floor=v;renderSidebar();}}
 
-// ── Group actions ──────────────────────────────────────────────────────────────
-function addGroup(type){
-  showModal('그룹 이름',`새 ${type==='cw'?'급수/급탕':'오배수'} 그룹`,v=>{
-    S[type].groups.push({id:uid(),name:v||'그룹 '+(S[type].groups.length+1),zoneIds:[]});
+// ── Floor actions ──────────────────────────────────────────────────────────────
+function addFloor(type){
+  showModal('층 이름',`새 층 추가 (예: 1층)`,v=>{
+    S[type].floors.push({id:uid(),name:v||'층 '+(S[type].floors.length+1),zoneIds:[]});
     renderTab(activeTab);
   });
 }
-function delGroup(type,id){
-  S[type].groups=S[type].groups.filter(g=>g.id!==id);
-  S[type].sgs=S[type].sgs.filter(s=>s.groupId!==id);
+function delFloor(type,id){
+  S[type].floors=S[type].floors.filter(f=>f.id!==id);
+  for(const r of S[type].risers) r.floorIds=r.floorIds.filter(i=>i!==id);
+  S[type].main.floorIds=S[type].main.floorIds.filter(i=>i!==id);
   renderTab(activeTab);
 }
-function setGroupName(type,id,v){const g=S[type].groups.find(g=>g.id===id);if(g)g.name=v;}
-function toggleZone(type,gid,zid,chk){
-  const g=S[type].groups.find(g=>g.id===gid);if(!g)return;
-  if(chk&&!g.zoneIds.includes(zid))g.zoneIds.push(zid);
-  if(!chk)g.zoneIds=g.zoneIds.filter(i=>i!==zid);
+function setFloorName(type,id,v){const f=S[type].floors.find(f=>f.id===id);if(f)f.name=v;}
+function toggleFloorZone(type,fid,zid,chk){
+  const f=S[type].floors.find(f=>f.id===fid);if(!f)return;
+  if(chk&&!f.zoneIds.includes(zid))f.zoneIds.push(zid);
+  if(!chk)f.zoneIds=f.zoneIds.filter(i=>i!==zid);
   renderTab(activeTab);
 }
-function addSG(type){S[type].sgs.push({id:uid(),groupId:''});renderTab(activeTab);}
-function delSG(type,id){S[type].sgs=S[type].sgs.filter(s=>s.id!==id);renderTab(activeTab);}
-function setSGGroup(type,sgId,gid){
-  const sg=S[type].sgs.find(s=>s.id===sgId);if(sg){sg.groupId=gid;renderTab(activeTab);}
+
+// ── Riser actions ──────────────────────────────────────────────────────────────
+function addRiser(type){
+  showModal('입상관 이름',`새 입상관 추가 (예: A입상관)`,v=>{
+    S[type].risers.push({id:uid(),name:v||'입상관 '+(S[type].risers.length+1),floorIds:[],zoneIds:[]});
+    renderTab(activeTab);
+  });
+}
+function delRiser(type,id){
+  S[type].risers=S[type].risers.filter(r=>r.id!==id);
+  S[type].main.riserIds=S[type].main.riserIds.filter(i=>i!==id);
+  renderTab(activeTab);
+}
+function setRiserName(type,id,v){const r=S[type].risers.find(r=>r.id===id);if(r)r.name=v;}
+function toggleRiserFloor(type,rid,fid,chk){
+  const r=S[type].risers.find(r=>r.id===rid);if(!r)return;
+  if(chk&&!r.floorIds.includes(fid))r.floorIds.push(fid);
+  if(!chk)r.floorIds=r.floorIds.filter(i=>i!==fid);
+  renderTab(activeTab);
+}
+function toggleRiserZone(type,rid,zid,chk){
+  const r=S[type].risers.find(r=>r.id===rid);if(!r)return;
+  if(chk&&!r.zoneIds.includes(zid))r.zoneIds.push(zid);
+  if(!chk)r.zoneIds=r.zoneIds.filter(i=>i!==zid);
+  renderTab(activeTab);
+}
+
+// ── Main pipe actions ──────────────────────────────────────────────────────────
+function toggleMainItem(type,kind,id,chk){
+  const m=S[type].main;
+  const key=kind==='riser'?'riserIds':kind==='floor'?'floorIds':'zoneIds';
+  if(chk&&!m[key].includes(id))m[key].push(id);
+  if(!chk)m[key]=m[key].filter(i=>i!==id);
+  renderTab(activeTab);
 }
 
 // ── Save / Load ────────────────────────────────────────────────────────────────
@@ -1088,8 +1389,9 @@ function resetAll(){
   if(!confirm('현재 작업을 초기화할까요? 저장하지 않은 내용은 사라집니다.')) return;
   S.projectName='새 프로젝트';
   S.zones=[];
-  S.cw={groups:[],sgs:[]};
-  S.dr={groups:[],sgs:[]};
+  S.mainLocation='bottom';
+  S.cw={floors:[],risers:[],main:{riserIds:[],floorIds:[],zoneIds:[]}};
+  S.dr={floors:[],risers:[],main:{riserIds:[],floorIds:[],zoneIds:[]}};
   _id=1; activeZone=null;
   document.getElementById('projectName').value='새 프로젝트';
   renderAll();
@@ -1116,7 +1418,7 @@ function loadJSON(e){
         scanId(z);
         if(z.pipe) Object.values(z.pipe.nodes).forEach(scanId);
       });
-      [...S.cw.groups,...S.dr.groups,...S.cw.sgs,...S.dr.sgs].forEach(scanId);
+      [...S.cw.floors,...S.dr.floors,...S.cw.risers,...S.dr.risers].forEach(scanId);
       _id=mx+1;
       document.getElementById('projectName').value=S.projectName||'';
       activeZone=S.zones[0]?.id||null;
