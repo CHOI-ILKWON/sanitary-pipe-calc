@@ -1166,9 +1166,9 @@ function schematicSVG(type){
   const isTop=S.mainLocation==='top';
 
   // Layout constants
-  const ZW=130, ZH=82;
-  const ZG=10;
-  const ROW_H=ZH+50;
+  const ZW=102, ZH=64;   // zone box = same size as floor box
+  const ZG=8;
+  const ROW_H=ZH+54;
   const COL_PAD=28;
   const FBW=102, FBH=64;
   const FBG=8;
@@ -1206,22 +1206,23 @@ function schematicSVG(type){
     mainLineY=TOP_PAD+20;
     rowY=i=>mainLineY+MAIN_PAD+20+i*ROW_H+FBH/2;
   }
-  const svgH=isTop?mainLineY+MAIN_PAD+20+numRows*ROW_H+30:mainLineY+50;
+  const svgH=isTop?mainLineY+MAIN_PAD+20+numRows*ROW_H+30:mainLineY+FBH+30;
 
   const floorRowIdx={};
   floorOrder.forEach((fid,i)=>{floorRowIdx[fid]=i;});
 
+  const lastRX=rX.length?rX[rX.length-1]:svgW-10;
   let buf='';
 
   // Floor level guide lines
   for(let i=0;i<floorOrder.length;i++){
     const fy=rowY(i);
-    buf+=`<line x1="${MAIN_LW}" y1="${fy}" x2="${svgW-10}" y2="${fy}" stroke="#1e2238" stroke-width="0.7" stroke-dasharray="4,6"/>`;
+    buf+=`<line x1="${MAIN_LW}" y1="${fy}" x2="${lastRX}" y2="${fy}" stroke="#1e2238" stroke-width="0.7" stroke-dasharray="4,6"/>`;
   }
 
   // MAIN pipe
   const mainR=calcMainType(type);
-  buf+=`<line x1="${MAIN_LW}" y1="${mainLineY}" x2="${svgW-10}" y2="${mainLineY}" stroke="#f7a64f" stroke-width="3"/>`;
+  buf+=`<line x1="${MAIN_LW}" y1="${mainLineY}" x2="${lastRX}" y2="${mainLineY}" stroke="#f7a64f" stroke-width="3"/>`;
   buf+=`<rect x="4" y="${mainLineY-26}" width="${MAIN_LW-8}" height="52" rx="5" fill="#1a1d27" stroke="#f7a64f" stroke-width="1.5"/>`;
   buf+=`<text x="${MAIN_LW/2}" y="${mainLineY-12}" text-anchor="middle" fill="#e8ecf4" font-size="9.5" font-weight="700" font-family="Malgun Gothic,sans-serif">MAIN관</text>`;
   if(isCW){
