@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>위생배관 관경 계산서</title>
-
 <style>
 :root {
   --bg:#0f1117; --surface:#1a1d27; --surface2:#22263a; --surface3:#2a2f47;
@@ -52,27 +51,64 @@ header{position:sticky;top:0;z-index:100;background:var(--surface);border-bottom
 .zone-card-del:hover{color:var(--red)}
 .main-panel{flex:1;overflow:hidden;display:flex;flex-direction:column}
 #resultPanel{overflow-y:auto;padding:16px}
-.zone-editor-top{padding:12px 16px;flex-shrink:0;background:var(--surface);border-bottom:1px solid var(--border)}
-.zone-editor-row{display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap}
+.zone-editor-top{padding:10px 16px;flex-shrink:0;background:var(--surface);border-bottom:1px solid var(--border)}
+.zone-editor-row{display:flex;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap}
 .zone-name-inp{background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:15px;font-weight:700;font-family:inherit;width:200px}
 .zone-name-inp:focus{outline:none;border-color:var(--accent)}
 .zone-chips{display:flex;gap:8px;flex-wrap:wrap}
 .chip{background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:5px 12px;font-size:12px;display:flex;align-items:center;gap:6px}
 .chip-lbl{color:var(--text2)}
 .chip-val{font-weight:600}
-.fx-qty{width:48px;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:2px 4px;border-radius:3px;font-size:11px;text-align:center;font-family:inherit}
-.fx-qty:focus{outline:none;border-color:var(--accent)}
-/* Interactive Tree Canvas */
-.tree-canvas{flex:1;overflow:auto;background:var(--bg);text-align:center;padding:20px 0}
-.tree-inner{display:inline-block;position:relative;text-align:left}
-.tree-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visible}
-.ic-node{position:absolute;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:9px 11px;width:200px}
-.ic-root{border-color:var(--accent2)!important}
-.icn-name{background:transparent;border:none;border-bottom:1px solid var(--border);color:var(--text);font-size:12px;font-weight:600;font-family:inherit;width:100%;outline:none;padding:2px 2px 3px;margin-bottom:6px;display:block}
-.icn-name:focus{border-bottom-color:var(--accent)}
-.icn-badges{display:flex;gap:3px;flex-wrap:wrap;margin-bottom:4px}
-.icn-badges .badge{font-size:10px;padding:1px 5px}
-.icn-btns{display:flex;gap:3px;margin-top:6px;flex-wrap:wrap}
+/* P&ID Pipe Canvas */
+.pipe-canvas{flex:1;overflow:auto;background:var(--bg);position:relative}
+.pipe-inner{position:relative}
+/* Pipe Nodes */
+.pipe-node{
+  position:absolute;width:110px;
+  background:var(--surface2);border:1.5px solid var(--border);
+  border-radius:8px;padding:7px 9px;font-size:11px;
+  transition:border-color .1s;
+}
+.pipe-node-start{border-color:var(--accent2)!important}
+.pipe-node-junction{border-color:var(--warn)!important}
+.pipe-node-fixture{border-color:var(--accent)!important}
+.pipe-node-end{border-color:var(--red)!important;border-radius:8px 50% 50% 8px!important}
+.pipe-label{font-weight:700;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
+.pipe-sub{font-size:10px;color:var(--text2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pipe-qty-row{display:flex;align-items:center;gap:3px;margin-top:4px}
+.pipe-qty-inp{width:38px;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:1px 3px;border-radius:3px;font-size:10px;text-align:center;font-family:inherit}
+.pipe-qty-inp:focus{outline:none;border-color:var(--accent)}
+.pipe-node-sizes{font-size:9.5px;margin-top:4px;line-height:1.5;display:flex;flex-direction:column;gap:0}
+.pipe-del{
+  position:absolute;top:3px;right:3px;
+  background:none;border:none;color:var(--text2);
+  cursor:pointer;font-size:12px;line-height:1;padding:1px;
+  opacity:0;transition:opacity .15s;
+}
+.pipe-node:hover .pipe-del{opacity:1}
+.pipe-del:hover{color:var(--red)}
+.pipe-add{
+  position:absolute;width:26px;height:26px;border-radius:50%;
+  background:var(--surface2);border:1.5px dashed var(--border);
+  color:var(--text2);cursor:pointer;font-size:16px;line-height:1;
+  display:flex;align-items:center;justify-content:center;
+  transition:all .15s;z-index:5;padding:0;font-family:inherit;
+}
+.pipe-add:hover{background:var(--accent);border-color:var(--accent);color:#fff;border-style:solid}
+/* Add-element popup */
+.add-popup{
+  position:fixed;background:var(--surface);border:1px solid var(--border);
+  border-radius:8px;padding:6px;z-index:300;
+  display:flex;flex-direction:column;gap:3px;min-width:120px;
+  box-shadow:0 4px 20px rgba(0,0,0,.5);
+}
+.add-popup-item{
+  padding:7px 12px;border-radius:5px;border:none;
+  background:none;color:var(--text);cursor:pointer;
+  font-size:12px;text-align:left;font-family:inherit;transition:background .1s;
+}
+.add-popup-item:hover{background:var(--surface2)}
+/* Conn / Group layout */
 .conn-layout{display:flex;width:100%;height:100%}
 .conn-sidebar{width:200px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);overflow-y:auto;padding:12px}
 .conn-main{flex:1;overflow-y:auto;padding:16px}
@@ -113,19 +149,13 @@ select:focus{outline:none;border-color:var(--accent)}
 .fr{display:flex;align-items:center;gap:8px}
 .ml{margin-left:auto}
 .mb{margin-bottom:8px}
+.fxm-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}
+.fxm-item{width:100%;text-align:left;padding:7px 10px;font-size:12px}
 @media print{
   header,.tabs-bar{display:none!important}
   .tab-pane{display:block!important;height:auto!important;page-break-after:always}
   body{background:#fff;color:#000}
 }
-.fx-added-list{margin-top:5px;display:flex;flex-direction:column;gap:3px}
-.fx-added-row{display:flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:3px 8px}
-.fx-added-name{font-size:11px;color:var(--text2);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.fx-del-btn{background:none;border:none;color:var(--text2);cursor:pointer;font-size:15px;padding:0 2px;line-height:1;flex-shrink:0}
-.fx-del-btn:hover{color:var(--red)}
-/* Fixture select modal */
-.fxm-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}
-.fxm-item{width:100%;text-align:left;padding:7px 10px;font-size:12px}
 </style>
 </head>
 <body>
@@ -222,7 +252,7 @@ function wstPipe(d){
 }
 function ps(p){ return p ? p+'A' : 'N/A' }
 
-// ── Calc ───────────────────────────────────────────────────────────────────────
+// ── Calc (tree-based, used internally) ────────────────────────────────────────
 function calcNode(node){
   let cwQ=0,hwQ=0,sewDFU=0,wstDFU=0;
   let mCw=0,mHw=0,mSew=0,mWst=0;
@@ -251,15 +281,37 @@ function calcNode(node){
     wstPipe: wstDFU>0? Math.max(wstPipe(wstDFU),mWst, 50)  : 0,
   };
 }
-function calcZone(z){ return calcNode(z.tree); }
 
-function zoneFxTotals(tree){
-  const t={}; FX_KEYS.forEach(k=>t[k]=0);
-  function walk(n){for(const k of FX_KEYS)t[k]+=((n.fixtures||{})[k]||0);for(const c of n.children||[])walk(c);}
-  walk(tree); return t;
+// ── Pipe graph → calc tree conversion ─────────────────────────────────────────
+function pipeToCalcNode(id, nodes){
+  if(!id||!nodes[id]) return {fixtures:Object.fromEntries(FX_KEYS.map(k=>[k,0])),children:[]};
+  const n=nodes[id];
+  const fixtures=Object.fromEntries(FX_KEYS.map(k=>[k,0]));
+  if(n.type==='fixture'&&n.fxKey) fixtures[n.fxKey]=n.qty||1;
+  const children=[];
+  if(n.mainNext) children.push(pipeToCalcNode(n.mainNext,nodes));
+  if(n.branchNext) children.push(pipeToCalcNode(n.branchNext,nodes));
+  return {id:n.id, fixtures, children};
 }
-function zoneFxSummaryCard(tree){
-  const t=zoneFxTotals(tree);
+
+function calcZone(z){
+  return calcNode(pipeToCalcNode(z.pipe.rootId, z.pipe.nodes));
+}
+
+function zoneFxTotals(z){
+  const t=Object.fromEntries(FX_KEYS.map(k=>[k,0]));
+  function walk(id){
+    if(!id||!z.pipe.nodes[id]) return;
+    const n=z.pipe.nodes[id];
+    if(n.type==='fixture'&&n.fxKey) t[n.fxKey]=(t[n.fxKey]||0)+(n.qty||1);
+    walk(n.mainNext); walk(n.branchNext);
+  }
+  walk(z.pipe.rootId);
+  return t;
+}
+
+function zoneFxSummaryCard(z){
+  const t=zoneFxTotals(z);
   const groups=[
     {lbl:'대변기', keys:['wc_v','wc_t']},
     {lbl:'소변기', keys:['ur_v','ur_t']},
@@ -273,6 +325,7 @@ function zoneFxSummaryCard(tree){
   ];
   return groups.map(g=>{const n=g.keys.reduce((s,k)=>s+(t[k]||0),0);return n?g.lbl+' '+n:'';}).filter(Boolean).join(' · ')||null;
 }
+
 function sewSimult(cnt){
   if(cnt<=2)  return 1.0;
   if(cnt<=5)  return 0.8;
@@ -301,7 +354,7 @@ function calcDRGroup(g){
   let sD=0,wD=0,sewCnt=0,wstCnt=0;
   for(const z of zs){
     const r=calcZone(z); sD+=r.sewDFU; wD+=r.wstDFU;
-    const t=zoneFxTotals(z.tree);
+    const t=zoneFxTotals(z);
     for(const k of FX_KEYS){
       if(FX[k].drain==='sew') sewCnt+=t[k]||0;
       else                    wstCnt+=t[k]||0;
@@ -345,35 +398,32 @@ function calcDRMain(){
   return {sewDFU:sD,wstDFU:wD,sewPipe:sD>0?Math.max(sewPipe(sD),100):0,wstPipe:wD>0?Math.max(wstPipe(wD),50):0};
 }
 
+// ── Pipe layout constants ──────────────────────────────────────────────────────
+const PNW=110, PNH=48;   // node width / height
+const MX=200;            // main pipe x position (center of canvas horizontally)
+const H_STEP=160;        // horizontal step between branch nodes
+const V_STEP=100;        // vertical step between main pipe nodes (minimum)
+const BR_ROW=90;         // vertical step for sub-branch rows
+
 // ── State ──────────────────────────────────────────────────────────────────────
 let _id=1;
 const uid=()=>'n'+(++_id);
-const newFx=()=>Object.fromEntries(FX_KEYS.map(k=>[k,0]));
-const newNode=(name='분기')=>({id:uid(),name,fixtures:newFx(),children:[]});
-const newZone=(name,floor='1층')=>({id:uid(),name:name||'Zone 1',floor,tree:newNode('분기 A')});
+
+function newPipeNode(type){
+  return {id:uid(), type, fxKey:null, qty:1, mainNext:null, branchNext:null};
+}
+function newZone(name,floor='1층'){
+  const start=newPipeNode('start');
+  return {
+    id:uid(), name:name||'Zone 1', floor,
+    pipe:{nodes:{[start.id]:start}, rootId:start.id}
+  };
+}
 
 const S={projectName:'새 프로젝트',zones:[],cw:{groups:[],sgs:[]},dr:{groups:[],sgs:[]}};
 let activeZone=null, activeTab=0;
 
 function findZone(id){return S.zones.find(z=>z.id===id)}
-function findNode(tree,id){
-  if(tree.id===id) return tree;
-  for(const c of tree.children||[]){const r=findNode(c,id);if(r) return r;}
-  return null;
-}
-function findParent(tree,id,par=null){
-  if(tree.id===id) return par;
-  for(const c of tree.children||[]){
-    const r=findParent(c,id,tree);
-    if(r!==undefined) return r;
-  }
-  return undefined;
-}
-function fxSummary(fx){
-  const p=[];
-  for(const k of FX_KEYS) if(fx[k]) p.push(FX[k].name+' '+fx[k]+'개');
-  return p.length?p.join(' · '):'기구 없음';
-}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 
 // ── Tab switch ─────────────────────────────────────────────────────────────────
@@ -391,7 +441,7 @@ function renderTab(i){
 }
 function renderAll(){renderTab(activeTab);}
 
-// ── Tab 1 render ───────────────────────────────────────────────────────────────
+// ── Sidebar ────────────────────────────────────────────────────────────────────
 function renderSidebar(){
   const el=document.getElementById('zoneSidebar');
   let h=`<div class="sidebar-hdr"><span class="sidebar-title">Zone 목록</span>
@@ -399,11 +449,12 @@ function renderSidebar(){
   if(!S.zones.length){h+=`<div class="empty">Zone을 추가하세요</div>`;}
   else for(const z of S.zones){
     const r=calcZone(z),ac=z.id===activeZone;
+    const summary=zoneFxSummaryCard(z);
     h+=`<div class="zone-card${ac?' active':''}" onclick="selZone('${z.id}')">
       <button class="zone-card-del" onclick="event.stopPropagation();delZone('${z.id}')">✕</button>
       <div class="zone-card-name">${esc(z.name)}</div>
       <div class="zone-card-floor">${z.floor}</div>
-      ${(s=>s?`<div class="zone-card-fx">${esc(s)}</div>`:``)(zoneFxSummaryCard(z.tree))}
+      ${summary?`<div class="zone-card-fx">${esc(summary)}</div>`:''}
       <div class="zone-card-badges">
         <span class="badge ${r.cwPipe?'badge-cw':'badge-na'}">${ps(r.cwPipe)}</span>
         <span class="badge ${r.hwPipe?'badge-hw':'badge-na'}">${ps(r.hwPipe)}</span>
@@ -414,9 +465,254 @@ function renderSidebar(){
   el.innerHTML=h;
 }
 
+function chipsHTML(r){
+  return `<div class="chip"><span class="chip-lbl">급수</span><span class="chip-val" style="color:var(--accent)">${ps(r.cwPipe)}</span><span class="chip-lbl">${r.cwQ.toFixed(1)} L/min</span></div>
+  <div class="chip"><span class="chip-lbl">급탕</span><span class="chip-val" style="color:var(--hot)">${ps(r.hwPipe)}</span><span class="chip-lbl">${r.hwQ.toFixed(1)} L/min</span></div>
+  <div class="chip"><span class="chip-lbl">오수관</span><span class="chip-val" style="color:var(--red)">${ps(r.sewPipe)}</span><span class="chip-lbl">${r.sewDFU} DFU</span></div>
+  <div class="chip"><span class="chip-lbl">배수관</span><span class="chip-val" style="color:var(--drain)">${ps(r.wstPipe)}</span><span class="chip-lbl">${r.wstDFU} DFU</span></div>`;
+}
+
+// ── P&ID Pipe Editor ───────────────────────────────────────────────────────────
+
+// Returns height (in rows) needed by a horizontal branch chain starting at id
+function branchHeight(id, nodes){
+  if(!id||!nodes[id]) return 0;
+  const n=nodes[id];
+  let h=1;
+  if(n.branchNext) h=Math.max(h, 1+branchHeight(n.branchNext,nodes));
+  if(n.mainNext)   h=Math.max(h, branchHeight(n.mainNext,nodes));
+  return h;
+}
+
+function layoutPipe(zone){
+  const nodes=zone.pipe.nodes;
+  const pos={};
+
+  function placeV(id, x, y){
+    if(!id||!nodes[id]) return;
+    const n=nodes[id];
+    pos[id]={x, y, axis:'v'};
+    // branch goes horizontal to the RIGHT
+    if(n.branchNext) placeH(n.branchNext, x+H_STEP, y);
+    // main continues DOWN
+    if(n.mainNext){
+      const bh=n.branchNext ? branchHeight(n.branchNext,nodes) : 0;
+      const dy=Math.max(V_STEP, bh*BR_ROW+20);
+      placeV(n.mainNext, x, y+dy);
+    }
+  }
+
+  function placeH(id, x, y){
+    if(!id||!nodes[id]) return;
+    const n=nodes[id];
+    pos[id]={x, y, axis:'h'};
+    // main continues RIGHT
+    if(n.mainNext) placeH(n.mainNext, x+H_STEP, y);
+    // branch goes DOWN (sub-vertical pipe)
+    if(n.branchNext) placeV(n.branchNext, x, y+BR_ROW);
+  }
+
+  placeV(zone.pipe.rootId, MX, 30);
+  return pos;
+}
+
+function renderPipeNode(id, n, p, zoneId, r){
+  let cls='', label='', extra='';
+  if(n.type==='start'){
+    cls='pipe-node-start'; label='메인관 시작';
+  } else if(n.type==='junction'){
+    cls='pipe-node-junction'; label='T 분기';
+  } else if(n.type==='fixture'){
+    cls='pipe-node-fixture';
+    label=n.fxKey ? FX[n.fxKey].name : '?';
+    extra=`<div class="pipe-qty-row">
+      <input class="pipe-qty-inp" type="number" min="1" value="${n.qty||1}"
+        onchange="setPipeQty('${zoneId}','${id}',+this.value)">
+      <span style="font-size:10px;color:var(--text2)">개</span>
+    </div>`;
+  } else if(n.type==='end'){
+    cls='pipe-node-end'; label='종점';
+  }
+
+  const del=n.type!=='start'
+    ?`<button class="pipe-del" onclick="delPipeNode('${zoneId}','${id}')">✕</button>`:'';
+
+  // Pipe size summary inside node
+  let pipeInfo='';
+  if(r){
+    const parts=[];
+    if(r.cwPipe)  parts.push(`<span style="color:#4f8ef7">급수 ${r.cwPipe}A</span>`);
+    if(r.hwPipe)  parts.push(`<span style="color:#e05c8a">급탕 ${r.hwPipe}A</span>`);
+    if(r.sewPipe) parts.push(`<span style="color:#e05c5c">오수 ${r.sewPipe}A</span>`);
+    if(r.wstPipe) parts.push(`<span style="color:#a07cf7">배수 ${r.wstPipe}A</span>`);
+    if(parts.length){
+      pipeInfo=`<div class="pipe-node-sizes">${parts.join(' ')}</div>`;
+    }
+  }
+
+  return `<div class="pipe-node ${cls}" style="left:${p.x}px;top:${p.y}px" id="pn_${id}">
+    ${del}
+    <div class="pipe-label">${esc(label)}</div>
+    ${extra}
+    ${pipeInfo}
+  </div>`;
+}
+
+// Compute calc result for every node (accumulated downstream)
+function calcPipeGraph(zone){
+  const nodes=zone.pipe.nodes;
+  const cache={};
+  function calc(id){
+    if(!id||!nodes[id]) return null;
+    if(cache[id]) return cache[id];
+    cache[id]=calcNode(pipeToCalcNode(id,nodes));
+    return cache[id];
+  }
+  for(const id in nodes) calc(id);
+  return cache;
+}
+
+// SVG label box for a pipe result, placed at (lx,ly), align = 'right'|'left'|'center'
+function svgPipeLabel(r, lx, ly, align){
+  const items=[];
+  if(r.cwPipe)  items.push({c:'#4f8ef7', t:`급수 ${r.cwPipe}A`});
+  if(r.hwPipe)  items.push({c:'#e05c8a', t:`급탕 ${r.hwPipe}A`});
+  if(r.sewPipe) items.push({c:'#e05c5c', t:`오수 ${r.sewPipe}A`});
+  if(r.wstPipe) items.push({c:'#a07cf7', t:`배수 ${r.wstPipe}A`});
+  if(!items.length) return '';
+  const LH=12, PAD=3, BW=70;
+  const bh=items.length*LH+PAD*2;
+  let bx;
+  if(align==='right') bx=lx;
+  else if(align==='left') bx=lx-BW;
+  else bx=lx-BW/2;
+  const by=ly-bh/2;
+  let s=`<rect x="${bx}" y="${by}" width="${BW}" height="${bh}" rx="3" fill="#11141e" stroke="#2e3350" stroke-width="0.8" opacity="0.92"/>`;
+  items.forEach((item,i)=>{
+    s+=`<text x="${bx+PAD+2}" y="${by+PAD+LH*(i+0.82)}" fill="${item.c}" font-size="9.5" font-family="Malgun Gothic,sans-serif">${item.t}</text>`;
+  });
+  return s;
+}
+
+function renderPipeCanvas(zone){
+  const nodes=zone.pipe.nodes;
+  const pos=layoutPipe(zone);
+  const gr=calcPipeGraph(zone); // per-node accumulated results
+
+  // Canvas size
+  let maxX=0, maxY=0;
+  for(const id in pos){
+    maxX=Math.max(maxX, pos[id].x+PNW+240);
+    maxY=Math.max(maxY, pos[id].y+PNH+200);
+  }
+  const cW=Math.max(maxX, 800), cH=Math.max(maxY, 600);
+
+  // SVG lines + pipe labels
+  let lines='';
+  // Draw main pipe backbone (vertical line behind main-pipe nodes)
+  const mainIds=[];
+  (function walkV(id){ if(!id||!nodes[id]) return; mainIds.push(id); walkV(nodes[id].mainNext); })(zone.pipe.rootId);
+  if(mainIds.length>1){
+    const first=pos[mainIds[0]], last=pos[mainIds[mainIds.length-1]];
+    if(first&&last){
+      lines+=`<line x1="${first.x+PNW/2}" y1="${first.y}" x2="${last.x+PNW/2}" y2="${last.y+PNH}" stroke="#2e3350" stroke-width="3"/>`;
+    }
+  }
+
+  for(const id in pos){
+    const n=nodes[id], p=pos[id];
+    const cx=p.x+PNW/2, cy=p.y+PNH/2;
+    const rx=p.x+PNW,   by=p.y+PNH;
+
+    // Main connection line + label
+    if(n.mainNext&&pos[n.mainNext]){
+      const np=pos[n.mainNext];
+      const nr=gr[n.mainNext];
+      if(p.axis==='v'){
+        // vertical → vertical: straight down
+        const mx=cx, my=(by+np.y)/2;
+        lines+=`<line x1="${cx}" y1="${by}" x2="${np.x+PNW/2}" y2="${np.y}" stroke="#3a4060" stroke-width="2"/>`;
+        if(nr) lines+=svgPipeLabel(nr, mx+8, my, 'right');
+      } else {
+        // horizontal → horizontal: straight right
+        const mx=(rx+np.x)/2, my=cy;
+        lines+=`<line x1="${rx}" y1="${cy}" x2="${np.x}" y2="${np.y+PNH/2}" stroke="#3a4060" stroke-width="2"/>`;
+        if(nr) lines+=svgPipeLabel(nr, mx-35, my-28, 'center');
+      }
+    }
+
+    // Branch connection line + label
+    if(n.branchNext&&pos[n.branchNext]){
+      const bp=pos[n.branchNext];
+      const br=gr[n.branchNext];
+      if(p.axis==='v'){
+        // vertical junction → branch goes RIGHT: horizontal line
+        const mx=(rx+bp.x)/2, my=cy;
+        lines+=`<line x1="${rx}" y1="${cy}" x2="${bp.x}" y2="${bp.y+PNH/2}" stroke="#3a4060" stroke-width="2"/>`;
+        if(br) lines+=svgPipeLabel(br, mx-35, my-28, 'center');
+      } else {
+        // horizontal junction → sub-branch goes DOWN: vertical line
+        const mx=cx, my=(by+bp.y)/2;
+        lines+=`<line x1="${cx}" y1="${by}" x2="${bp.x+PNW/2}" y2="${bp.y}" stroke="#3a4060" stroke-width="2"/>`;
+        if(br) lines+=svgPipeLabel(br, mx+8, my, 'right');
+      }
+    }
+  }
+
+  // Add buttons and dashed stub lines
+  let addBtns='';
+  for(const id in pos){
+    const n=nodes[id], p=pos[id];
+    if(n.type==='end') continue;
+    const cx=p.x+PNW/2, cy=p.y+PNH/2;
+    const rx=p.x+PNW,   by=p.y+PNH;
+
+    // Main direction "+" (down for V, right for H)
+    if(!n.mainNext){
+      if(p.axis==='v'){
+        const bx=cx-13, btnY=by+V_STEP/2-13;
+        lines+=`<line x1="${cx}" y1="${by}" x2="${cx}" y2="${btnY+13}" stroke="#2e3350" stroke-width="1.5" stroke-dasharray="4,3"/>`;
+        addBtns+=`<button class="pipe-add" style="left:${bx}px;top:${btnY}px" title="아래 추가" onclick="openAddPopup('${zone.id}','${id}','main',event)">+</button>`;
+      } else {
+        const btnX=rx+H_STEP/2-13, bty=cy-13;
+        lines+=`<line x1="${rx}" y1="${cy}" x2="${btnX+13}" y2="${cy}" stroke="#2e3350" stroke-width="1.5" stroke-dasharray="4,3"/>`;
+        addBtns+=`<button class="pipe-add" style="left:${btnX}px;top:${bty}px" title="우측 추가" onclick="openAddPopup('${zone.id}','${id}','main',event)">+</button>`;
+      }
+    }
+
+    // Branch direction "+" (right for V junction, down for H junction)
+    if(n.type==='junction'&&!n.branchNext){
+      if(p.axis==='v'){
+        const btnX=rx+H_STEP/2-13, bty=cy-13;
+        lines+=`<line x1="${rx}" y1="${cy}" x2="${btnX+13}" y2="${cy}" stroke="#2e3350" stroke-width="1.5" stroke-dasharray="4,3"/>`;
+        addBtns+=`<button class="pipe-add" style="left:${btnX}px;top:${bty}px" title="분기 추가" onclick="openAddPopup('${zone.id}','${id}','branch',event)">+</button>`;
+      } else {
+        const bx=cx-13, btnY=by+BR_ROW/2-13;
+        lines+=`<line x1="${cx}" y1="${by}" x2="${cx}" y2="${btnY+13}" stroke="#2e3350" stroke-width="1.5" stroke-dasharray="4,3"/>`;
+        addBtns+=`<button class="pipe-add" style="left:${bx}px;top:${btnY}px" title="하위 분기 추가" onclick="openAddPopup('${zone.id}','${id}','branch',event)">+</button>`;
+      }
+    }
+  }
+
+  // Node HTML
+  let nodeHTML='';
+  for(const id in pos) nodeHTML+=renderPipeNode(id, nodes[id], pos[id], zone.id, gr[id]);
+
+  return `<div class="pipe-canvas" id="pipeCanvas">
+    <div class="pipe-inner" style="width:${cW}px;height:${cH}px">
+      <svg style="position:absolute;top:0;left:0;pointer-events:none;overflow:visible" width="${cW}" height="${cH}">${lines}</svg>
+      ${nodeHTML}
+      ${addBtns}
+    </div>
+  </div>`;
+}
+
 function renderEditor(){
   const el=document.getElementById('zoneEditor');
-  if(!S.zones.length){el.innerHTML=`<div class="empty" style="padding:40px 20px">좌측에서 Zone을 추가하고 선택하세요.</div>`;return;}
+  if(!S.zones.length){
+    el.innerHTML=`<div class="empty" style="padding:40px 20px">좌측에서 Zone을 추가하고 선택하세요.</div>`;
+    return;
+  }
   const zone=findZone(activeZone)||S.zones[0];
   if(!activeZone) activeZone=zone.id;
   const r=calcZone(zone);
@@ -427,142 +723,117 @@ function renderEditor(){
     </div>
     <div class="zone-chips" id="zone-chips-${zone.id}">${chipsHTML(r)}</div>
   </div>`;
-  h+=renderTreeCanvas(r);
+  h+=renderPipeCanvas(zone);
   el.innerHTML=h;
-  updateTreeLines();
+  // scroll so the start node (at MX, 30) is centered in the viewport
+  const canvas=document.getElementById('pipeCanvas');
+  if(canvas) canvas.scrollLeft=MX-canvas.clientWidth/2+PNW/2;
 }
 
-function chipsHTML(r){
-  return `<div class="chip"><span class="chip-lbl">급수</span><span class="chip-val" style="color:var(--accent)">${ps(r.cwPipe)}</span><span class="chip-lbl">${r.cwQ.toFixed(1)} L/min</span></div>
-  <div class="chip"><span class="chip-lbl">급탕</span><span class="chip-val" style="color:var(--hot)">${ps(r.hwPipe)}</span><span class="chip-lbl">${r.hwQ.toFixed(1)} L/min</span></div>
-  <div class="chip"><span class="chip-lbl">오수관</span><span class="chip-val" style="color:var(--red)">${ps(r.sewPipe)}</span><span class="chip-lbl">${r.sewDFU} DFU</span></div>
-  <div class="chip"><span class="chip-lbl">배수관</span><span class="chip-val" style="color:var(--drain)">${ps(r.wstPipe)}</span><span class="chip-lbl">${r.wstDFU} DFU</span></div>`;
+// ── Add element popup ──────────────────────────────────────────────────────────
+let _addTarget=null;
+
+function openAddPopup(zoneId, fromId, direction, ev){
+  ev.stopPropagation();
+  closeAddPopup();
+  _addTarget={zoneId, fromId, direction};
+  const btn=ev.currentTarget;
+  const rect=btn.getBoundingClientRect();
+  const pop=document.createElement('div');
+  pop.className='add-popup';
+  pop.id='addPopup';
+  pop.style.left=(rect.right+6)+'px';
+  pop.style.top=rect.top+'px';
+  pop.innerHTML=`
+    <button class="add-popup-item" onclick="addPipeEl('junction')">T 분기</button>
+    <button class="add-popup-item" onclick="openFxPicker()">기구</button>
+    <button class="add-popup-item" onclick="addPipeEl('end')">종점</button>
+  `;
+  // Keep inside viewport
+  document.body.appendChild(pop);
+  const pr=pop.getBoundingClientRect();
+  if(pr.right>window.innerWidth) pop.style.left=(rect.left-pr.width-6)+'px';
+  if(pr.bottom>window.innerHeight) pop.style.top=(rect.bottom-pr.height)+'px';
 }
 
-function icnBadgesHTML(calc){
-  return [
-    {cls:'badge-cw',lbl:'급수',pipe:calc.cwPipe},
-    {cls:'badge-hw',lbl:'급탕',pipe:calc.hwPipe},
-    {cls:'badge-sew',lbl:'오수',pipe:calc.sewPipe},
-    {cls:'badge-wst',lbl:'배수',pipe:calc.wstPipe},
-  ].map(it=>`<span class="badge ${it.pipe?it.cls:'badge-na'}">${it.lbl} ${ps(it.pipe)}</span>`).join('');
+function closeAddPopup(){
+  const p=document.getElementById('addPopup');
+  if(p) p.remove();
+  _addTarget=null;
 }
 
-function addedFxRowsHTML(node,nodeId){
-  const fx=node.fixtures||{};
-  return FX_KEYS.filter(k=>(fx[k]||0)>0).map(k=>`
-    <div class="fx-added-row">
-      <span class="fx-added-name">${FX[k].name}</span>
-      <input class="fx-qty" type="number" min="0" value="${fx[k]}"
-        onchange="setFx('${nodeId}','${k}',+this.value)">
-      <button class="fx-del-btn" title="삭제" onclick="setFx('${nodeId}','${k}',0)">×</button>
-    </div>`).join('');
+document.addEventListener('click', ()=>closeAddPopup());
+
+function addPipeEl(type, fxKey){
+  const t=_addTarget;
+  closeAddPopup();
+  if(!t) return;
+  const {zoneId, fromId, direction}=t;
+  const z=findZone(zoneId); if(!z) return;
+  const fromNode=z.pipe.nodes[fromId]; if(!fromNode) return;
+  const newNode=newPipeNode(type);
+  if(fxKey){ newNode.fxKey=fxKey; newNode.qty=1; }
+  z.pipe.nodes[newNode.id]=newNode;
+  if(direction==='main') fromNode.mainNext=newNode.id;
+  else fromNode.branchNext=newNode.id;
+  renderAll();
 }
 
-function pickerItemsHTML(node,nodeId){
-  const fx=node.fixtures||{};
-  const avail=FX_KEYS.filter(k=>!((fx[k]||0)>0));
-  if(!avail.length) return `<div class="fx-picker-empty">모두 추가됨</div>`;
-  return avail.map(k=>`<div class="fx-picker-item" onclick="addFxToNode('${nodeId}','${k}')">${FX[k].name}</div>`).join('');
-}
-
-// ── Interactive Tree Canvas ────────────────────────────────────────────────────
-const IC_W=200, IC_H_EST=110, IC_HG=18, IC_VG=100;
-
-function layoutIC(calc){
-  const ch=calc.kids||[];
-  const cl=ch.map(c=>layoutIC(c));
-  let subtreeW;
-  if(cl.length){
-    subtreeW=cl.reduce((s,c)=>s+c.subtreeW,0)+(cl.length-1)*IC_HG;
-    subtreeW=Math.max(IC_W,subtreeW);
-  } else {
-    subtreeW=IC_W;
-  }
-  return {calc,cl,subtreeW};
-}
-
-function placeIC(lay,x,y){
-  lay.x=x+(lay.subtreeW-IC_W)/2;
-  lay.y=y;
-  let cx=x;
-  for(const c of lay.cl){
-    placeIC(c,cx,y+IC_H_EST+IC_VG);
-    cx+=c.subtreeW+IC_HG;
-  }
-}
-
-function icNodeHTML(node,calc,x,y,isRoot){
-  return `<div class="ic-node${isRoot?' ic-root':''}" id="icn_${node.id}" style="left:${x}px;top:${y}px">
-    <input class="icn-name" value="${esc(node.name)}" onchange="setNodeName('${node.id}',this.value)">
-    <div class="icn-badges" id="icnb_${node.id}">${icnBadgesHTML(calc)}</div>
-    <div class="fx-added-list" id="fal_${node.id}">${addedFxRowsHTML(node,node.id)}</div>
-    <div class="icn-btns">
-      <button class="btn btn-ghost btn-sm" onclick="showFxModal('${node.id}')">+ 기구</button>
-      <button class="btn btn-success btn-sm" onclick="addChild('${node.id}')">+ 하위</button>
-      ${!isRoot?`<button class="btn btn-danger btn-sm" onclick="delNode('${node.id}')">삭제</button>`:''}
+function openFxPicker(){
+  const t=_addTarget;
+  closeAddPopup();
+  if(!t) return;
+  const ov=document.getElementById('modalOverlay');
+  ov.style.display='flex';
+  const items=FX_KEYS.map(k=>`<button class="btn btn-ghost fxm-item" onclick="pickFx('${t.zoneId}','${t.fromId}','${t.direction}','${k}')">${FX[k].name}</button>`).join('');
+  ov.innerHTML=`<div class="modal" style="width:380px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div class="modal-title" style="margin:0">기구 선택</div>
+      <button class="btn btn-ghost btn-sm" onclick="closeModal()">✕</button>
     </div>
+    <div class="fxm-grid">${items}</div>
   </div>`;
+  window._fxTarget=t;
 }
 
-function renderTreeCanvas(r){
-  const lay=layoutIC(r);
-  placeIC(lay,20,20);
-  let maxX=0,maxY=0;
-  function measure(l){maxX=Math.max(maxX,l.x+IC_W);maxY=Math.max(maxY,l.y+IC_H_EST);for(const c of l.cl)measure(c);}
-  measure(lay);
-  const cW=maxX+24, cH=maxY+IC_VG+24;
-  window._icLay=lay;
-  let nodes='';
-  function collect(l,isRoot){
-    nodes+=icNodeHTML(l.calc.node,l.calc,l.x,l.y,isRoot);
-    for(const c of l.cl)collect(c,false);
-  }
-  collect(lay,true);
-  return `<div class="tree-canvas"><div class="tree-inner" id="tree-inner" style="width:${cW}px;min-height:${cH}px">
-    <svg class="tree-svg" id="tree-svg" width="${cW}" height="${cH}"></svg>
-    ${nodes}
-  </div></div>`;
+function pickFx(zoneId, fromId, direction, fxKey){
+  closeModal();
+  const z=findZone(zoneId); if(!z) return;
+  const fromNode=z.pipe.nodes[fromId]; if(!fromNode) return;
+  const n=newPipeNode('fixture');
+  n.fxKey=fxKey; n.qty=1;
+  z.pipe.nodes[n.id]=n;
+  if(direction==='main') fromNode.mainNext=n.id;
+  else fromNode.branchNext=n.id;
+  renderAll();
 }
 
-function updateTreeLines(){
-  const lay=window._icLay;
-  if(!lay) return;
-  const svgEl=document.getElementById('tree-svg');
-  const innerEl=document.getElementById('tree-inner');
-  if(!svgEl||!innerEl) return;
-  let lines='',maxH=0;
-  function draw(l){
-    const pe=document.getElementById('icn_'+l.calc.node?.id);
-    if(!pe) return;
-    const pBot=pe.offsetTop+pe.offsetHeight;
-    const pCX=l.x+IC_W/2;
-    maxH=Math.max(maxH,pBot);
-    for(const c of l.cl){
-      const ce=document.getElementById('icn_'+c.calc.node?.id);
-      if(ce) maxH=Math.max(maxH,ce.offsetTop+ce.offsetHeight);
-      const cCX=c.x+IC_W/2, cTop=c.y;
-      const midY=pBot+(cTop-pBot)/2;
-      lines+=`<path d="M${pCX},${pBot} L${pCX},${midY} L${cCX},${midY} L${cCX},${cTop}" fill="none" stroke="#3a4060" stroke-width="1.5" stroke-linecap="round"/>`;
-      draw(c);
-    }
+function setPipeQty(zoneId, nodeId, qty){
+  const z=findZone(zoneId); if(!z) return;
+  const n=z.pipe.nodes[nodeId]; if(!n) return;
+  n.qty=Math.max(1,qty||1);
+  const r=calcZone(z);
+  const chips=document.getElementById('zone-chips-'+z.id);
+  if(chips) chips.innerHTML=chipsHTML(r);
+  renderSidebar();
+}
+
+function delPipeNode(zoneId, nodeId){
+  const z=findZone(zoneId); if(!z) return;
+  const nodes=z.pipe.nodes;
+  // Detach from parent
+  for(const id in nodes){
+    if(nodes[id].mainNext===nodeId) nodes[id].mainNext=null;
+    if(nodes[id].branchNext===nodeId) nodes[id].branchNext=null;
   }
-  draw(lay);
-  const fH=maxH+30;
-  svgEl.innerHTML=lines;
-  svgEl.setAttribute('height',fH);
-  innerEl.style.minHeight=fH+'px';
+  // Delete subtree
+  (function del(id){ if(!id||!nodes[id]) return; const n=nodes[id]; del(n.mainNext); del(n.branchNext); delete nodes[id]; })(nodeId);
+  renderAll();
 }
 
 // ── Tab 2/3 ────────────────────────────────────────────────────────────────────
-function renderCWTab(){
-  connZoneList('cwZoneList',true);
-  connMain('cwMain','cw');
-}
-function renderDRTab(){
-  connZoneList('drZoneList',false);
-  connMain('drMain','dr');
-}
+function renderCWTab(){ connZoneList('cwZoneList',true); connMain('cwMain','cw'); }
+function renderDRTab(){ connZoneList('drZoneList',false); connMain('drMain','dr'); }
 
 function connZoneList(elId,isCW){
   const el=document.getElementById(elId);
@@ -623,7 +894,6 @@ function connMain(elId,type){
   }
   h+=`</div>`;
 
-  // Cumulative table
   h+=`<div class="section">
     <div class="fr mb"><span class="section-title" style="margin:0">누적 관경 확인</span>
       <button class="btn btn-ghost btn-sm ml" onclick="addSG('${type}')">+ 행 추가</button></div>`;
@@ -643,9 +913,6 @@ function connMain(elId,type){
           else{const gr=calcDRGroup(g);cSew+=gr.sewDFU;cWst+=gr.wstDFU;}
         }
       }
-      const lbl=sgs.slice(0,i+1).filter(s=>s.groupId).map(s=>{
-        const g=groups.find(g=>g.id===s.groupId);return g?g.name:'';
-      }).filter(Boolean).join(' + ')||'(미선택)';
       h+=`<tr><td>${i+1}</td>
         <td><div style="display:flex;align-items:center;gap:6px">
           <select onchange="setSGGroup('${type}','${sg.id}',this.value)">
@@ -707,7 +974,6 @@ function mainSVG(isCW){
   const groups=S[isCW?'cw':'dr'].groups;
   const mainR=isCW?calcCWMain():calcDRMain();
   const NW2=140,NH2=66,HG2=44,VG2=10;
-
   const aid=assignedIds(groups);
   const unassigned=S.zones.filter(z=>!aid.has(z.id));
   const gnodes=groups.map(g=>{
@@ -723,16 +989,13 @@ function mainSVG(isCW){
     gnodes.push({name:'미배정',r:ur,zones:unassigned});
   }
   if(!gnodes.length&&!S.zones.length) return `<div class="empty">Zone 데이터가 없습니다.</div>`;
-
   const x0=10,x1=x0+NW2+HG2,x2=x1+NW2+HG2;
   let totZ=0; for(const g of gnodes) totZ+=Math.max(1,g.zones.length);
   const svgH=Math.max(NH2+40,totZ*(NH2+VG2)+20);
   const svgW=x2+NW2+160;
-
   let buf='';
   const mcy=svgH/2;
   buf+=mnode(x0,mcy-NH2/2,NW2,NH2,'기계실/메인관',mainR,isCW,'#f7a64f');
-
   let cy=10;
   for(const gn of gnodes){
     const zc=Math.max(1,gn.zones.length);
@@ -767,33 +1030,7 @@ function mnode(x,y,w,h,name,r,isCW,bc){
   return b;
 }
 
-// ── Fixture Modal ──────────────────────────────────────────────────────────────
-function showFxModal(nodeId){
-  const z=findZone(activeZone);if(!z)return;
-  const n=findNode(z.tree,nodeId);if(!n)return;
-  const fx=n.fixtures||{};
-  const avail=FX_KEYS.filter(k=>!((fx[k]||0)>0));
-  const ov=document.getElementById('modalOverlay');
-  ov.style.display='flex';
-  const items=avail.length
-    ?avail.map(k=>`<button class="btn btn-ghost fxm-item" onclick="addFxFromModal('${nodeId}','${k}')">${FX[k].name}</button>`).join('')
-    :`<div style="color:var(--text2);font-size:13px;text-align:center;padding:8px 0">모든 기구가 이미 추가됨</div>`;
-  ov.innerHTML=`<div class="modal" style="width:380px">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-      <div class="modal-title" style="margin:0">기구 선택</div>
-      <button class="btn btn-ghost btn-sm" onclick="closeModal()">✕</button>
-    </div>
-    <div class="fxm-grid">${items}</div>
-  </div>`;
-  window._mcb=null;
-}
-
-function addFxFromModal(nodeId,key){
-  closeModal();
-  setFx(nodeId,key,1);
-}
-
-// ── Actions ────────────────────────────────────────────────────────────────────
+// ── Zone actions ───────────────────────────────────────────────────────────────
 function addZone(){
   showModal('Zone 이름','새 Zone 추가',v=>{
     const z=newZone(v||'Zone '+(S.zones.length+1));
@@ -811,45 +1048,7 @@ function selZone(id){activeZone=id;renderSidebar();renderEditor();}
 function setZoneName(id,v){const z=findZone(id);if(z){z.name=v;renderSidebar();}}
 function setZoneFloor(id,v){const z=findZone(id);if(z){z.floor=v;renderSidebar();}}
 
-function setNodeName(nodeId,v){
-  const z=findZone(activeZone);if(!z)return;
-  const n=findNode(z.tree,nodeId);if(n)n.name=v;
-}
-
-function setFx(nodeId,key,val){
-  const z=findZone(activeZone);if(!z)return;
-  const n=findNode(z.tree,nodeId);if(!n)return;
-  const prev=n.fixtures[key]||0;
-  n.fixtures[key]=Math.max(0,val||0);
-  const curr=n.fixtures[key];
-  if((prev===0)!==(curr===0)){
-    // Fixture added or removed: re-render tree so connection lines update
-    renderAll();
-    return;
-  }
-  // Qty change only: partial DOM update (node height unchanged, lines stay valid)
-  const r=calcZone(z);
-  const chips=document.getElementById('zone-chips-'+z.id);
-  if(chips) chips.innerHTML=chipsHTML(r);
-  const nb=document.getElementById('icnb_'+nodeId);
-  if(nb) nb.innerHTML=icnBadgesHTML(calcNode(n));
-  renderSidebar();
-}
-
-function addChild(parentId){
-  const z=findZone(activeZone);if(!z)return;
-  const p=findNode(z.tree,parentId);if(!p)return;
-  if(!p.children)p.children=[];
-  p.children.push(newNode('하위 분기 '+(p.children.length+1)));
-  renderEditor();
-}
-function delNode(nodeId){
-  const z=findZone(activeZone);if(!z)return;
-  const p=findParent(z.tree,nodeId);if(!p)return;
-  p.children=p.children.filter(c=>c.id!==nodeId);
-  renderEditor(); renderSidebar();
-}
-
+// ── Group actions ──────────────────────────────────────────────────────────────
 function addGroup(type){
   showModal('그룹 이름',`새 ${type==='cw'?'급수/급탕':'오배수'} 그룹`,v=>{
     S[type].groups.push({id:uid(),name:v||'그룹 '+(S[type].groups.length+1),zoneIds:[]});
@@ -881,8 +1080,7 @@ function resetAll(){
   S.zones=[];
   S.cw={groups:[],sgs:[]};
   S.dr={groups:[],sgs:[]};
-  _id=1;
-  activeZone=null;
+  _id=1; activeZone=null;
   document.getElementById('projectName').value='새 프로젝트';
   renderAll();
 }
@@ -900,13 +1098,15 @@ function loadJSON(e){
       const d=JSON.parse(ev.target.result);
       Object.assign(S,d);
       let mx=0;
-      const scan=o=>{
-        if(!o)return;
+      function scanId(o){
+        if(!o) return;
         if(o.id){const n=parseInt(o.id.slice(1));if(n>mx)mx=n;}
-        (o.children||[]).forEach(scan);
-      };
-      S.zones.forEach(z=>{scan(z);scan(z.tree);});
-      [...S.cw.groups,...S.dr.groups,...S.cw.sgs,...S.dr.sgs].forEach(scan);
+      }
+      S.zones.forEach(z=>{
+        scanId(z);
+        if(z.pipe) Object.values(z.pipe.nodes).forEach(scanId);
+      });
+      [...S.cw.groups,...S.dr.groups,...S.cw.sgs,...S.dr.sgs].forEach(scanId);
       _id=mx+1;
       document.getElementById('projectName').value=S.projectName||'';
       activeZone=S.zones[0]?.id||null;
