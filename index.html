@@ -64,11 +64,15 @@ header{position:sticky;top:0;z-index:100;background:var(--surface);border-bottom
 .pipe-inner{position:relative}
 /* Pipe Nodes */
 .pipe-node{
-  position:absolute;width:120px;
+  position:absolute;width:150px;
   background:var(--surface2);border:1.5px solid var(--border);
   border-radius:8px;padding:8px 10px;font-size:11px;
   transition:border-color .1s;
 }
+.pipe-both-cols{display:flex;gap:0;margin-top:5px;border-top:1px solid var(--border);padding-top:4px}
+.pipe-col{flex:1;min-width:0}
+.pipe-col-hdr{font-size:9px;color:var(--text2);margin-bottom:2px;font-weight:600;letter-spacing:.3px}
+.pipe-col-div{width:1px;background:var(--border);margin:0 5px;flex-shrink:0}
 .pipe-node-start{border-color:var(--accent2)!important}
 .pipe-node-junction{border-color:var(--warn)!important}
 .pipe-node-fixture{border-color:var(--accent)!important}
@@ -399,9 +403,9 @@ function calcDRMain(){
 }
 
 // ── Pipe layout constants ──────────────────────────────────────────────────────
-const PNW=120, PNH=100;  // node width / effective height (for spacing)
-const MX=200;            // main pipe x position (center of canvas horizontally)
-const H_STEP=200;        // horizontal step between branch nodes
+const PNW=150, PNH=100;  // node width / effective height (for spacing)
+const MX=220;            // main pipe x position (center of canvas horizontally)
+const H_STEP=220;        // horizontal step between branch nodes
 const V_STEP=170;        // vertical step between main pipe nodes (minimum)
 const BR_ROW=150;        // vertical step for sub-branch rows
 
@@ -538,16 +542,36 @@ function renderPipeNode(id, n, p, zoneId, r){
     ?`<button class="pipe-del" onclick="delPipeNode('${zoneId}','${id}')">✕</button>`:'';
 
   // Pipe size summary inside node
+  function pipeSizeRows(res){
+    if(!res) return '';
+    let s='';
+    if(res.cwPipe)  s+=`<div style="color:#4f8ef7">급수 ${res.cwPipe}A</div>`;
+    if(res.hwPipe)  s+=`<div style="color:#e05c8a">급탕 ${res.hwPipe}A</div>`;
+    if(res.sewPipe) s+=`<div style="color:#e05c5c">오수 ${res.sewPipe}A</div>`;
+    if(res.wstPipe) s+=`<div style="color:#a07cf7">배수 ${res.wstPipe}A</div>`;
+    return s;
+  }
+
   let pipeInfo='';
-  if(r){
-    const parts=[];
-    if(r.cwPipe)  parts.push(`<span style="color:#4f8ef7">급수 ${r.cwPipe}A</span>`);
-    if(r.hwPipe)  parts.push(`<span style="color:#e05c8a">급탕 ${r.hwPipe}A</span>`);
-    if(r.sewPipe) parts.push(`<span style="color:#e05c5c">오수 ${r.sewPipe}A</span>`);
-    if(r.wstPipe) parts.push(`<span style="color:#a07cf7">배수 ${r.wstPipe}A</span>`);
-    if(parts.length){
-      pipeInfo=`<div class="pipe-node-sizes">${parts.join(' ')}</div>`;
-    }
+  if(n.type==='fixture' && n.fxKey && r){
+    // Individual pipe: calc for just this fixture alone
+    const fxSingle=Object.fromEntries(FX_KEYS.map(k=>[k,0]));
+    fxSingle[n.fxKey]=n.qty||1;
+    const sr=calcNode({fixtures:fxSingle, children:[]});
+    pipeInfo=`<div class="pipe-both-cols">
+      <div class="pipe-col">
+        <div class="pipe-col-hdr">누적관</div>
+        <div class="pipe-node-sizes">${pipeSizeRows(r)}</div>
+      </div>
+      <div class="pipe-col-div"></div>
+      <div class="pipe-col">
+        <div class="pipe-col-hdr">개별관</div>
+        <div class="pipe-node-sizes">${pipeSizeRows(sr)}</div>
+      </div>
+    </div>`;
+  } else if(r){
+    const rows=pipeSizeRows(r);
+    if(rows) pipeInfo=`<div class="pipe-node-sizes" style="margin-top:5px;border-top:1px solid var(--border);padding-top:4px">${rows}</div>`;
   }
 
   return `<div class="pipe-node ${cls}" style="left:${p.x}px;top:${p.y}px" id="pn_${id}">
