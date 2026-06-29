@@ -64,9 +64,9 @@ header{position:sticky;top:0;z-index:100;background:var(--surface);border-bottom
 .pipe-inner{position:relative}
 /* Pipe Nodes */
 .pipe-node{
-  position:absolute;width:110px;
+  position:absolute;width:120px;
   background:var(--surface2);border:1.5px solid var(--border);
-  border-radius:8px;padding:7px 9px;font-size:11px;
+  border-radius:8px;padding:8px 10px;font-size:11px;
   transition:border-color .1s;
 }
 .pipe-node-start{border-color:var(--accent2)!important}
@@ -399,11 +399,11 @@ function calcDRMain(){
 }
 
 // ── Pipe layout constants ──────────────────────────────────────────────────────
-const PNW=110, PNH=48;   // node width / height
+const PNW=120, PNH=100;  // node width / effective height (for spacing)
 const MX=200;            // main pipe x position (center of canvas horizontally)
-const H_STEP=160;        // horizontal step between branch nodes
-const V_STEP=100;        // vertical step between main pipe nodes (minimum)
-const BR_ROW=90;         // vertical step for sub-branch rows
+const H_STEP=200;        // horizontal step between branch nodes
+const V_STEP=170;        // vertical step between main pipe nodes (minimum)
+const BR_ROW=150;        // vertical step for sub-branch rows
 
 // ── State ──────────────────────────────────────────────────────────────────────
 let _id=1;
