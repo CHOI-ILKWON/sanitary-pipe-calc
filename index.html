@@ -624,37 +624,23 @@ function renderPipeCanvas(zone){
     const cx=p.x+PNW/2, cy=p.y+PNH/2;
     const rx=p.x+PNW,   by=p.y+PNH;
 
-    // Main connection line + label
+    // Main connection line
     if(n.mainNext&&pos[n.mainNext]){
       const np=pos[n.mainNext];
-      const nr=gr[n.mainNext];
       if(p.axis==='v'){
-        // vertical → vertical: straight down
-        const mx=cx, my=(by+np.y)/2;
         lines+=`<line x1="${cx}" y1="${by}" x2="${np.x+PNW/2}" y2="${np.y}" stroke="#3a4060" stroke-width="2"/>`;
-        if(nr) lines+=svgPipeLabel(nr, mx+8, my, 'right');
       } else {
-        // horizontal → horizontal: straight right
-        const mx=(rx+np.x)/2, my=cy;
         lines+=`<line x1="${rx}" y1="${cy}" x2="${np.x}" y2="${np.y+PNH/2}" stroke="#3a4060" stroke-width="2"/>`;
-        if(nr) lines+=svgPipeLabel(nr, mx-35, my-28, 'center');
       }
     }
 
-    // Branch connection line + label
+    // Branch connection line
     if(n.branchNext&&pos[n.branchNext]){
       const bp=pos[n.branchNext];
-      const br=gr[n.branchNext];
       if(p.axis==='v'){
-        // vertical junction → branch goes RIGHT: horizontal line
-        const mx=(rx+bp.x)/2, my=cy;
         lines+=`<line x1="${rx}" y1="${cy}" x2="${bp.x}" y2="${bp.y+PNH/2}" stroke="#3a4060" stroke-width="2"/>`;
-        if(br) lines+=svgPipeLabel(br, mx-35, my-28, 'center');
       } else {
-        // horizontal junction → sub-branch goes DOWN: vertical line
-        const mx=cx, my=(by+bp.y)/2;
         lines+=`<line x1="${cx}" y1="${by}" x2="${bp.x+PNW/2}" y2="${bp.y}" stroke="#3a4060" stroke-width="2"/>`;
-        if(br) lines+=svgPipeLabel(br, mx+8, my, 'right');
       }
     }
   }
