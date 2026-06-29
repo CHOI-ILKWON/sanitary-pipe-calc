@@ -1029,63 +1029,67 @@ function renderMainPipeTab(){
     const main=S[type].main;
     const risers=S[type].risers;
     const floors=S[type].floors;
-    // Items assignable to main: unassigned risers, unassigned floors, unassigned zones
-    const usedRisers=new Set(main.riserIds);
-    const usedFloors=new Set(main.floorIds);
-    const usedZones=new Set(main.zoneIds);
-    // floors already in a riser
+
+    // Precompute membership sets
     const floorInRiser=new Set();
     for(const r of risers) for(const fid of r.floorIds) floorInRiser.add(fid);
-    // zones already in a floor
     const zoneInFloor=new Set();
     for(const f of floors) for(const zid of f.zoneIds) zoneInFloor.add(zid);
-    // zones already in a riser (direct)
     const zoneInRiser=new Set();
     for(const r of risers) for(const zid of r.zoneIds) zoneInRiser.add(zid);
 
-    const freeRisers=risers.filter(r=>!usedRisers.has(r.id));
-    const freeFloors=floors.filter(f=>!floorInRiser.has(f.id)&&!usedFloors.has(f.id));
-    const freeZones=S.zones.filter(z=>!zoneInFloor.has(z.id)&&!zoneInRiser.has(z.id)&&!usedZones.has(z.id));
+    // Show ALL risers (checked = in main.riserIds), always visible for toggling
+    const floorsForMain=floors.filter(f=>!floorInRiser.has(f.id));
+    const zonesForMain=S.zones.filter(z=>!zoneInFloor.has(z.id)&&!zoneInRiser.has(z.id));
 
     h+=`<div class="section">
       <div class="section-title">${isCW?'급수/급탕':'오배수'} MAIN관 배정</div>
-      <div style="font-size:11px;color:var(--text2);margin-bottom:10px">미배정 입상관·층·화장실이 자동으로 MAIN관에 포함됩니다. 아래에서 명시적으로 추가 배정할 항목을 선택하세요.</div>`;
+      <div style="font-size:11px;color:var(--text2);margin-bottom:10px">체크된 항목이 MAIN관에 포함됩니다. 체크/해제로 언제든 수정 가능합니다.</div>`;
 
-    if(freeRisers.length){
+    if(risers.length){
       h+=`<div style="font-size:11px;font-weight:600;color:var(--accent2);margin-bottom:6px">▸ 입상관</div>
       <div class="zone-check-list">
-        ${freeRisers.map(r=>`<label class="zone-check-item">
-          <input type="checkbox" ${main.riserIds.includes(r.id)?'checked':''}
-            onchange="toggleMainItem('${type}','riser','${r.id}',this.checked)">
-          <span>${esc(r.name)}</span>
-          <span style="font-size:10px;color:var(--text2)">${r.floorIds.length}층 ${r.zoneIds.length}개 직접배정</span>
-        </label>`).join('')}
+        ${risers.map(r=>{
+          const checked=main.riserIds.includes(r.id);
+          return `<label class="zone-check-item" style="${checked?'background:rgba(56,201,160,0.08);border-color:var(--accent2)':''}">
+            <input type="checkbox" ${checked?'checked':''}
+              onchange="toggleMainItem('${type}','riser','${r.id}',this.checked)">
+            <span style="${checked?'color:var(--accent2);font-weight:600':''}">${esc(r.name)}</span>
+            <span style="font-size:10px;color:var(--text2)">${r.floorIds.length}층 · ${r.zoneIds.length}직결</span>
+          </label>`;
+        }).join('')}
       </div>`;
     }
-    if(freeFloors.length){
+    if(floorsForMain.length){
       h+=`<div style="font-size:11px;font-weight:600;color:var(--warn);margin-bottom:6px;margin-top:10px">▸ 층 (입상관 미배정)</div>
       <div class="zone-check-list">
-        ${freeFloors.map(f=>`<label class="zone-check-item">
-          <input type="checkbox" ${main.floorIds.includes(f.id)?'checked':''}
-            onchange="toggleMainItem('${type}','floor','${f.id}',this.checked)">
-          <span>${esc(f.name)}</span>
-          <span style="font-size:10px;color:var(--text2)">${f.zoneIds.length}개 화장실</span>
-        </label>`).join('')}
+        ${floorsForMain.map(f=>{
+          const checked=main.floorIds.includes(f.id);
+          return `<label class="zone-check-item" style="${checked?'background:rgba(255,183,77,0.08);border-color:var(--warn)':''}">
+            <input type="checkbox" ${checked?'checked':''}
+              onchange="toggleMainItem('${type}','floor','${f.id}',this.checked)">
+            <span style="${checked?'color:var(--warn);font-weight:600':''}">${esc(f.name)}</span>
+            <span style="font-size:10px;color:var(--text2)">${f.zoneIds.length}개 화장실</span>
+          </label>`;
+        }).join('')}
       </div>`;
     }
-    if(freeZones.length){
+    if(zonesForMain.length){
       h+=`<div style="font-size:11px;font-weight:600;color:var(--accent);margin-bottom:6px;margin-top:10px">▸ 화장실 (층/입상관 미배정)</div>
       <div class="zone-check-list">
-        ${freeZones.map(z=>`<label class="zone-check-item">
-          <input type="checkbox" ${main.zoneIds.includes(z.id)?'checked':''}
-            onchange="toggleMainItem('${type}','zone','${z.id}',this.checked)">
-          <span>${esc(z.name)}</span>
-          <span style="font-size:10px;color:var(--text2)">${z.floor||''}</span>
-        </label>`).join('')}
+        ${zonesForMain.map(z=>{
+          const checked=main.zoneIds.includes(z.id);
+          return `<label class="zone-check-item" style="${checked?'background:rgba(79,142,247,0.08);border-color:var(--accent)':''}">
+            <input type="checkbox" ${checked?'checked':''}
+              onchange="toggleMainItem('${type}','zone','${z.id}',this.checked)">
+            <span style="${checked?'color:var(--accent);font-weight:600':''}">${esc(z.name)}</span>
+            <span style="font-size:10px;color:var(--text2)">${z.floor||''}</span>
+          </label>`;
+        }).join('')}
       </div>`;
     }
-    if(!freeRisers.length&&!freeFloors.length&&!freeZones.length){
-      h+=`<div class="empty" style="padding:12px 0">모든 항목이 입상관에 배정되었습니다.</div>`;
+    if(!risers.length&&!floorsForMain.length&&!zonesForMain.length){
+      h+=`<div class="empty" style="padding:12px 0">배정할 항목이 없습니다. 탭 ②③에서 입상관·층·화장실을 먼저 설정하세요.</div>`;
     }
     h+=`</div>`;
   }
