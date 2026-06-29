@@ -1132,179 +1132,201 @@ function renderResult(){
   el.innerHTML=h;
 }
 
-// ── Schematic SVG (계통도) ────────────────────────────────────────────────────
+// ── Schematic SVG (건물 수직 계통도) ─────────────────────────────────────────
 function schematicSVG(type){
   const isCW=type==='cw';
-  if(!S.zones.length) return `<div class="empty">화장실 데이터가 없습니다.</div>`;
+  const risers=S[type].risers, floors=S[type].floors;
+  if(!risers.length&&!floors.length) return `<div class="empty">탭 ②③에서 층과 입상관을 설정하세요.</div>`;
   const isTop=S.mainLocation==='top';
 
-  // Build hierarchy: main → risers → floors → zones
-  // Collect nodes for display
-  const NW=130, NH=60, HGAP=30, VGAP=12;
-  // Columns: zones(col3) → floors(col2) → risers(col1) → main(col0)
-  // When top: main at top, zones at bottom. When bottom: main at bottom, zones at top.
+  // ── Layout constants ──────────────────────────────────────────────────────
+  const ZW=148, ZH=82;   // zone box size
+  const ZG=10;            // gap between zone boxes on same floor
+  const ROW_H=ZH+44;     // vertical spacing per floor row
+  const COL_PAD=28;       // riser line → first zone box
+  const RI_SEP=36;        // gap between riser column groups
+  const MAIN_LW=108;      // main pipe label box width
+  const TOP_PAD=20;
+  const MAIN_PAD=42;      // space reserved for riser label near main pipe
 
-  // Gather all items in order
-  const rows=[];  // each row = one zone-level row
-  const mainR=calcMainType(type);
-
-  function pushZone(z, floorLabel, riserLabel){
-    rows.push({zone:z, floorLabel, riserLabel, zr:calcZone(z)});
-  }
-  function pushEmptyRow(floorLabel, riserLabel){
-    rows.push({zone:null, floorLabel, riserLabel, zr:null});
-  }
-
-  // Process risers in order
-  const usedFloorIds=new Set();
-  const usedZoneIds=new Set();
-
-  for(const ri of S[type].risers){
-    const rr=calcRiser(ri,type);
-    let riserRows=[];
+  // ── Ordered floor list ────────────────────────────────────────────────────
+  const floorOrder=[];
+  const seenFl=new Set();
+  for(const ri of risers){
     for(const fid of ri.floorIds){
-      const fl=S[type].floors.find(f=>f.id===fid);
-      if(!fl){continue;}
-      usedFloorIds.add(fid);
-      if(fl.zoneIds.length){
-        for(const zid of fl.zoneIds){
-          const z=S.zones.find(z=>z.id===zid);
-          if(z){usedZoneIds.add(zid);riserRows.push({zone:z,floorLabel:fl.name,riserLabel:ri.name,zr:calcZone(z),rr,fr:calcFloor(fl,type)});}
-        }
-      } else {
-        riserRows.push({zone:null,floorLabel:fl.name,riserLabel:ri.name,zr:null,rr,fr:calcFloor(fl,type)});
-      }
-    }
-    for(const zid of ri.zoneIds){
-      const z=S.zones.find(z=>z.id===zid);
-      if(z){usedZoneIds.add(zid);riserRows.push({zone:z,floorLabel:'직접',riserLabel:ri.name,zr:calcZone(z),rr,fr:null});}
-    }
-    if(!riserRows.length) riserRows.push({zone:null,floorLabel:'',riserLabel:ri.name,zr:null,rr,fr:null});
-    rows.push(...riserRows);
-  }
-
-  // Floors not in risers
-  for(const fl of S[type].floors){
-    if(usedFloorIds.has(fl.id)) continue;
-    if(fl.zoneIds.length){
-      for(const zid of fl.zoneIds){
-        const z=S.zones.find(z=>z.id===zid);
-        if(z){usedZoneIds.add(zid);rows.push({zone:z,floorLabel:fl.name,riserLabel:'직결',zr:calcZone(z),rr:null,fr:calcFloor(fl,type)});}
-      }
-    } else {
-      rows.push({zone:null,floorLabel:fl.name,riserLabel:'직결',zr:null,rr:null,fr:calcFloor(fl,type)});
+      if(!seenFl.has(fid)){seenFl.add(fid);floorOrder.push(fid);}
     }
   }
-
-  // Zones not in any floor or riser
-  for(const z of S.zones){
-    if(!usedZoneIds.has(z.id)) rows.push({zone:z,floorLabel:'직결',riserLabel:'직결',zr:calcZone(z),rr:null,fr:null});
+  for(const fl of floors){
+    if(!seenFl.has(fl.id)){seenFl.add(fl.id);floorOrder.push(fl.id);}
   }
+  const dispFloorIds=isTop?[...floorOrder]:[...floorOrder];
+  const numRows=dispFloorIds.length||1;
 
-  if(!rows.length) return `<div class="empty">배정된 항목이 없습니다.</div>`;
+  // ── Riser column widths ───────────────────────────────────────────────────
+  const riserData=risers.map(ri=>{
+    let maxZ=1;
+    for(const fid of ri.floorIds){
+      const fl=floors.find(f=>f.id===fid);
+      if(fl) maxZ=Math.max(maxZ,fl.zoneIds.length);
+    }
+    maxZ=Math.max(maxZ,ri.zoneIds.length,1);
+    return {ri,maxZ,colW:COL_PAD+maxZ*(ZW+ZG),rr:calcRiser(ri,type)};
+  });
 
-  const totalRows=rows.length;
-  const svgH=Math.max(totalRows*(NH+VGAP)+VGAP+40, NH+80);
-  const x0=10, x1=x0+NW+HGAP, x2=x1+NW+HGAP, x3=x2+NW+HGAP;
-  const svgW=x3+NW+40;
+  // ── X positions ───────────────────────────────────────────────────────────
+  const rX=[];
+  let curX=MAIN_LW+20;
+  for(const rd of riserData){rX.push(curX);curX+=rd.colW+RI_SEP;}
+  const svgW=Math.max(curX+10,500);
+
+  // ── Y positions ───────────────────────────────────────────────────────────
+  // !isTop: floors stack from top, MAIN pipe at bottom
+  //  isTop: MAIN pipe at top, floors hang downward
+  let rowY, mainLineY;
+  if(!isTop){
+    rowY=i=>TOP_PAD+i*ROW_H+ZH/2+10;
+    mainLineY=TOP_PAD+numRows*ROW_H+10+MAIN_PAD;
+  } else {
+    mainLineY=TOP_PAD+20;
+    rowY=i=>mainLineY+MAIN_PAD+20+i*ROW_H+ZH/2;
+  }
+  const svgH=isTop
+    ?mainLineY+MAIN_PAD+20+numRows*ROW_H+30
+    :mainLineY+44;
+
+  const floorRowIdx={};
+  dispFloorIds.forEach((fid,i)=>{floorRowIdx[fid]=i;});
 
   let buf='';
-  // Main node
-  const mainY=isTop?10:svgH-NH-10;
-  const mainCy=mainY+NH/2;
-  buf+=snode(x0,mainY,NW,NH,'MAIN관',mainR,isCW,'#f7a64f');
 
-  // Group rows by riser
-  let riserGrouped=[];
-  let curRiser=null, curRiserStart=0;
-  for(let i=0;i<rows.length;i++){
-    const rl=rows[i].riserLabel;
-    if(rl!==curRiser){
-      if(curRiser!==null) riserGrouped.push({label:curRiser,start:curRiserStart,end:i-1,rr:rows[curRiserStart].rr});
-      curRiser=rl; curRiserStart=i;
-    }
-  }
-  if(curRiser!==null) riserGrouped.push({label:curRiser,start:curRiserStart,end:rows.length-1,rr:rows[curRiserStart].rr});
-
-  // Group rows by floor within riser
-  function rowY(i){ return isTop?(i*(NH+VGAP)+VGAP+40):(svgH-40-(totalRows-i)*(NH+VGAP)); }
-
-  for(const rg of riserGrouped){
-    const ry1=rowY(rg.start)+NH/2, ry2=rowY(rg.end)+NH/2;
-    const rcy=(ry1+ry2)/2;
-    const rry=rcy-NH/2;
-    const rr=rg.rr;
-    if(rg.label!=='직결'){
-      buf+=snode(x1,rry,NW,NH,rg.label,rr,isCW,'#38c9a0');
-      // main→riser line
-      buf+=hline(x0+NW,mainCy,x1,rcy);
-    }
-
-    // Group by floor within riser group
-    let curFloor=null, curFloorStart=rg.start;
-    const floorGroups=[];
-    for(let i=rg.start;i<=rg.end;i++){
-      const fl=rows[i].floorLabel;
-      if(fl!==curFloor){
-        if(curFloor!==null) floorGroups.push({label:curFloor,start:curFloorStart,end:i-1,fr:rows[curFloorStart].fr});
-        curFloor=fl; curFloorStart=i;
-      }
-    }
-    if(curFloor!==null) floorGroups.push({label:curFloor,start:curFloorStart,end:rg.end,fr:rows[curFloorStart].fr});
-
-    for(const fg of floorGroups){
-      const fy1=rowY(fg.start)+NH/2, fy2=rowY(fg.end)+NH/2;
-      const fcy=(fy1+fy2)/2, fry=fcy-NH/2;
-      const fr=fg.fr;
-      if(fg.label!=='직결'&&fg.label!=='직접'){
-        buf+=snode(x2,fry,NW,NH,fg.label,fr,isCW,'#4f8ef7');
-        const fromX=rg.label==='직결'?x0+NW:x1+NW;
-        const fromCy=rg.label==='직결'?mainCy:rcy;
-        buf+=hline(fromX,fromCy,x2,fcy);
-      }
-      // Zone nodes
-      for(let i=fg.start;i<=fg.end;i++){
-        const row=rows[i];
-        if(!row.zone) continue;
-        const zy=rowY(i);
-        buf+=snode(x3,zy,NW,NH,row.zone.name,row.zr,isCW,'#7c9cf7');
-        let fromX2, fromCy2;
-        if(fg.label==='직결'||fg.label==='직접'){
-          fromX2=rg.label==='직결'?x0+NW:x1+NW;
-          fromCy2=rg.label==='직결'?mainCy:rcy;
-        } else { fromX2=x2+NW; fromCy2=fcy; }
-        buf+=hline(fromX2,fromCy2,x3,zy+NH/2);
-      }
-    }
+  // ── Floor level guide lines ───────────────────────────────────────────────
+  for(let i=0;i<dispFloorIds.length;i++){
+    const fy=rowY(i);
+    buf+=`<line x1="${MAIN_LW}" y1="${fy}" x2="${svgW-10}" y2="${fy}" stroke="#1e2238" stroke-width="0.7" stroke-dasharray="4,6"/>`;
   }
 
-  // Pipe size labels on main backbone
-  buf+=pipeLabel(x0+4,mainY+NH+4,mainR,isCW,'top');
-
-  return `<div style="overflow:auto"><svg width="${svgW}" height="${svgH}" style="display:block;min-width:${svgW}px">${buf}</svg></div>`;
-}
-
-function hline(x1,y1,x2,y2){
-  const mx=(x1+x2)/2;
-  return `<path d="M${x1},${y1} L${mx},${y1} L${mx},${y2} L${x2},${y2}" fill="none" stroke="#3a4060" stroke-width="1.5"/>`;
-}
-
-function snode(x,y,w,h,name,r,isCW,bc){
-  const cx=x+w/2;
-  let b=`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="5" fill="#1a1d27" stroke="${bc}" stroke-width="1.5"/>`;
-  b+=`<text x="${cx}" y="${y+13}" text-anchor="middle" fill="#e8ecf4" font-size="10" font-weight="700" font-family="Malgun Gothic">${esc(name)}</text>`;
-  if(!r) return b;
+  // ── MAIN pipe ─────────────────────────────────────────────────────────────
+  const mainR=calcMainType(type);
+  buf+=`<line x1="${MAIN_LW}" y1="${mainLineY}" x2="${svgW-10}" y2="${mainLineY}" stroke="#f7a64f" stroke-width="3"/>`;
+  buf+=`<rect x="4" y="${mainLineY-26}" width="${MAIN_LW-8}" height="52" rx="5" fill="#1a1d27" stroke="#f7a64f" stroke-width="1.5"/>`;
+  buf+=`<text x="${MAIN_LW/2}" y="${mainLineY-12}" text-anchor="middle" fill="#e8ecf4" font-size="9.5" font-weight="700" font-family="Malgun Gothic,sans-serif">MAIN관</text>`;
   if(isCW){
-    if(r.cwPipe)  b+=`<text x="${x+5}" y="${y+27}" fill="#4f8ef7"  font-size="9" font-family="Malgun Gothic">급수 ${ps(r.cwPipe)} ${(r.cwQ||0).toFixed(1)}L/m</text>`;
-    if(r.hwPipe)  b+=`<text x="${x+5}" y="${y+39}" fill="#e05c8a"  font-size="9" font-family="Malgun Gothic">급탕 ${ps(r.hwPipe)} ${(r.hwQ||0).toFixed(1)}L/m</text>`;
+    buf+=`<text x="${MAIN_LW/2}" y="${mainLineY+3}" text-anchor="middle" fill="#4f8ef7" font-size="8.5" font-family="Malgun Gothic,sans-serif">급수 ${ps(mainR.cwPipe)}</text>`;
+    buf+=`<text x="${MAIN_LW/2}" y="${mainLineY+16}" text-anchor="middle" fill="#e05c8a" font-size="8.5" font-family="Malgun Gothic,sans-serif">급탕 ${ps(mainR.hwPipe)}</text>`;
   } else {
-    if(r.sewPipe) b+=`<text x="${x+5}" y="${y+27}" fill="#e05c5c"  font-size="9" font-family="Malgun Gothic">오수 ${ps(r.sewPipe)} ${(r.sewDFU||0).toFixed(1)}DFU</text>`;
-    if(r.wstPipe) b+=`<text x="${x+5}" y="${y+39}" fill="#a07cf7"  font-size="9" font-family="Malgun Gothic">배수 ${ps(r.wstPipe)} ${(r.wstDFU||0).toFixed(1)}DFU</text>`;
+    buf+=`<text x="${MAIN_LW/2}" y="${mainLineY+3}" text-anchor="middle" fill="#e05c5c" font-size="8.5" font-family="Malgun Gothic,sans-serif">오수 ${ps(mainR.sewPipe)}</text>`;
+    buf+=`<text x="${MAIN_LW/2}" y="${mainLineY+16}" text-anchor="middle" fill="#a07cf7" font-size="8.5" font-family="Malgun Gothic,sans-serif">배수 ${ps(mainR.wstPipe)}</text>`;
+  }
+
+  // ── Risers ────────────────────────────────────────────────────────────────
+  for(let ri_i=0;ri_i<riserData.length;ri_i++){
+    const {ri,rr,colW}=riserData[ri_i];
+    const rx=rX[ri_i];
+    const rColor='#38c9a0';
+
+    // Y extent of this riser
+    const connRowIdxs=ri.floorIds
+      .filter(fid=>floorRowIdx[fid]!==undefined)
+      .map(fid=>floorRowIdx[fid]);
+    const topRowI=connRowIdxs.length?Math.min(...connRowIdxs):-1;
+    const botRowI=connRowIdxs.length?Math.max(...connRowIdxs):-1;
+    const riserTopY=topRowI>=0?rowY(topRowI):mainLineY;
+    const riserBotY=botRowI>=0?rowY(botRowI):mainLineY;
+
+    // Vertical riser line
+    if(!isTop){
+      buf+=`<line x1="${rx}" y1="${riserTopY}" x2="${rx}" y2="${mainLineY}" stroke="${rColor}" stroke-width="2.5"/>`;
+    } else {
+      buf+=`<line x1="${rx}" y1="${mainLineY}" x2="${rx}" y2="${riserBotY}" stroke="${rColor}" stroke-width="2.5"/>`;
+    }
+
+    // Riser label box near main pipe
+    const riLY=mainLineY+(isTop?-(ZH/2+18):4);
+    buf+=`<rect x="${rx-44}" y="${riLY}" width="88" height="52" rx="5" fill="#1a1d27" stroke="${rColor}" stroke-width="1.5"/>`;
+    buf+=`<text x="${rx}" y="${riLY+14}" text-anchor="middle" fill="#e8ecf4" font-size="10" font-weight="700" font-family="Malgun Gothic,sans-serif">${esc(ri.name)}</text>`;
+    if(isCW){
+      buf+=`<text x="${rx}" y="${riLY+29}" text-anchor="middle" fill="#4f8ef7" font-size="8.5" font-family="Malgun Gothic,sans-serif">급수 ${ps(rr.cwPipe)}</text>`;
+      buf+=`<text x="${rx}" y="${riLY+42}" text-anchor="middle" fill="#e05c8a" font-size="8.5" font-family="Malgun Gothic,sans-serif">급탕 ${ps(rr.hwPipe)}</text>`;
+    } else {
+      buf+=`<text x="${rx}" y="${riLY+29}" text-anchor="middle" fill="#e05c5c" font-size="8.5" font-family="Malgun Gothic,sans-serif">오수 ${ps(rr.sewPipe)}</text>`;
+      buf+=`<text x="${rx}" y="${riLY+42}" text-anchor="middle" fill="#a07cf7" font-size="8.5" font-family="Malgun Gothic,sans-serif">배수 ${ps(rr.wstPipe)}</text>`;
+    }
+
+    // ── Floors in this riser ─────────────────────────────────────────────
+    for(const fid of ri.floorIds){
+      const fl=floors.find(f=>f.id===fid);
+      if(!fl) continue;
+      const rowI=floorRowIdx[fid];
+      if(rowI===undefined) continue;
+      const fy=rowY(rowI);
+      const fr=calcFloor(fl,type);
+
+      // Dot on riser at floor level
+      buf+=`<circle cx="${rx}" cy="${fy}" r="5" fill="${rColor}" stroke="#0f1117" stroke-width="1.2"/>`;
+      // Floor name label (left of riser)
+      buf+=`<text x="${rx-14}" y="${fy+4}" text-anchor="end" fill="#e8ecf4" font-size="11" font-weight="700" font-family="Malgun Gothic,sans-serif">${esc(fl.name)}</text>`;
+
+      // Horizontal branch line
+      if(fl.zoneIds.length){
+        const lineEnd=rx+COL_PAD+fl.zoneIds.length*(ZW+ZG);
+        buf+=`<line x1="${rx}" y1="${fy}" x2="${lineEnd}" y2="${fy}" stroke="#3a4060" stroke-width="1.5"/>`;
+      }
+
+      // Zone boxes
+      let zx=rx+COL_PAD;
+      for(const zid of fl.zoneIds){
+        const z=S.zones.find(z=>z.id===zid);
+        if(!z) continue;
+        buf+=schZoneBox(zx,fy-ZH/2,ZW,ZH,z.name,calcZone(z),fr,isCW);
+        zx+=ZW+ZG;
+      }
+    }
+
+    // Direct zones attached to riser (no floor)
+    if(ri.zoneIds.length){
+      const pseudoY=isTop?mainLineY+MAIN_PAD+10+ZH/2:mainLineY-MAIN_PAD-ZH/2;
+      const lineEnd=rx+COL_PAD+ri.zoneIds.length*(ZW+ZG);
+      buf+=`<line x1="${rx}" y1="${pseudoY}" x2="${lineEnd}" y2="${pseudoY}" stroke="#3a4060" stroke-width="1.5"/>`;
+      buf+=`<text x="${rx-14}" y="${pseudoY+4}" text-anchor="end" fill="#8892aa" font-size="10" font-family="Malgun Gothic,sans-serif">직결</text>`;
+      let zx2=rx+COL_PAD;
+      for(const zid of ri.zoneIds){
+        const z=S.zones.find(z=>z.id===zid);
+        if(!z) continue;
+        buf+=schZoneBox(zx2,pseudoY-ZH/2,ZW,ZH,z.name,calcZone(z),null,isCW);
+        zx2+=ZW+ZG;
+      }
+    }
+  }
+
+  return `<div style="overflow:auto;background:var(--bg);padding:12px 16px;border-radius:8px">
+    <svg width="${svgW}" height="${svgH}" style="display:block;min-width:${svgW}px">${buf}</svg>
+  </div>`;
+}
+
+// Zone box for building schematic: name + (개별관 left | 층누적 right)
+function schZoneBox(x,y,w,h,name,zr,fr,isCW){
+  const stroke=isCW?'#4f8ef7':'#e05c5c';
+  const cx=x+w/2, midX=x+w/2;
+  let b=`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="5" fill="#1a1d27" stroke="${stroke}" stroke-width="1.5"/>`;
+  b+=`<text x="${cx}" y="${y+14}" text-anchor="middle" fill="#e8ecf4" font-size="9.5" font-weight="700" font-family="Malgun Gothic,sans-serif">${esc(name)}</text>`;
+  b+=`<line x1="${x+4}" y1="${y+20}" x2="${x+w-4}" y2="${y+20}" stroke="#2e3350" stroke-width="0.8"/>`;
+  b+=`<line x1="${midX}" y1="${y+20}" x2="${midX}" y2="${y+h-4}" stroke="#2e3350" stroke-width="0.8"/>`;
+  b+=`<text x="${x+w/4}" y="${y+31}" text-anchor="middle" fill="#8892aa" font-size="7.5" font-family="Malgun Gothic,sans-serif">개별관</text>`;
+  b+=`<text x="${x+3*w/4}" y="${y+31}" text-anchor="middle" fill="#8892aa" font-size="7.5" font-family="Malgun Gothic,sans-serif">층누적</text>`;
+  if(isCW){
+    if(zr&&zr.cwPipe) b+=`<text x="${x+w/4}" y="${y+45}" text-anchor="middle" fill="#4f8ef7" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zr.cwPipe)}</text>`;
+    if(zr&&zr.hwPipe) b+=`<text x="${x+w/4}" y="${y+59}" text-anchor="middle" fill="#e05c8a" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zr.hwPipe)}</text>`;
+    if(fr&&fr.cwPipe) b+=`<text x="${x+3*w/4}" y="${y+45}" text-anchor="middle" fill="#4f8ef7" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(fr.cwPipe)}</text>`;
+    if(fr&&fr.hwPipe) b+=`<text x="${x+3*w/4}" y="${y+59}" text-anchor="middle" fill="#e05c8a" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(fr.hwPipe)}</text>`;
+  } else {
+    if(zr&&zr.sewPipe) b+=`<text x="${x+w/4}" y="${y+45}" text-anchor="middle" fill="#e05c5c" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zr.sewPipe)}</text>`;
+    if(zr&&zr.wstPipe) b+=`<text x="${x+w/4}" y="${y+59}" text-anchor="middle" fill="#a07cf7" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zr.wstPipe)}</text>`;
+    if(fr&&fr.sewPipe) b+=`<text x="${x+3*w/4}" y="${y+45}" text-anchor="middle" fill="#e05c5c" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(fr.sewPipe)}</text>`;
+    if(fr&&fr.wstPipe) b+=`<text x="${x+3*w/4}" y="${y+59}" text-anchor="middle" fill="#a07cf7" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(fr.wstPipe)}</text>`;
   }
   return b;
 }
-
-function pipeLabel(x,y,r,isCW,pos){return '';} // reserved for future inline labels
 
 // ── Zone actions ───────────────────────────────────────────────────────────────
 function addZone(){
