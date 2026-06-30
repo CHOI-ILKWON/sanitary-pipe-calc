@@ -586,10 +586,10 @@ function renderPipeNode(id, n, p, zoneId, r){
   function pipeSizeRows(res){
     if(!res) return '';
     let s='';
-    if(res.cwPipe)  s+=`<div style="color:#4f8ef7">급수 ${res.cwPipe}A</div>`;
-    if(res.hwPipe)  s+=`<div style="color:#e05c8a">급탕 ${res.hwPipe}A</div>`;
-    if(res.sewPipe) s+=`<div style="color:#e05c5c">오수 ${res.sewPipe}A</div>`;
-    if(res.wstPipe) s+=`<div style="color:#a07cf7">배수 ${res.wstPipe}A</div>`;
+    if(res.cwPipe)  s+=`<div style="color:#2563eb">급수 ${res.cwPipe}A</div>`;
+    if(res.hwPipe)  s+=`<div style="color:#db2777">급탕 ${res.hwPipe}A</div>`;
+    if(res.sewPipe) s+=`<div style="color:#dc2626">오수 ${res.sewPipe}A</div>`;
+    if(res.wstPipe) s+=`<div style="color:#7c3aed">배수 ${res.wstPipe}A</div>`;
     return s;
   }
 
@@ -658,7 +658,7 @@ function svgPipeLabel(r, lx, ly, align){
   else if(align==='left') bx=lx-BW;
   else bx=lx-BW/2;
   const by=ly-bh/2;
-  let s=`<rect x="${bx}" y="${by}" width="${BW}" height="${bh}" rx="3" fill="#11141e" stroke="#2e3350" stroke-width="0.8" opacity="0.92"/>`;
+  let s=`<rect x="${bx}" y="${by}" width="${BW}" height="${bh}" rx="3" fill="#11141e" stroke="#d0d8ee" stroke-width="0.8" opacity="0.92"/>`;
   items.forEach((item,i)=>{
     s+=`<text x="${bx+PAD+2}" y="${by+PAD+LH*(i+0.82)}" fill="${item.c}" font-size="9.5" font-family="Malgun Gothic,sans-serif">${item.t}</text>`;
   });
@@ -686,7 +686,7 @@ function renderPipeCanvas(zone){
   if(mainIds.length>1){
     const first=pos[mainIds[0]], last=pos[mainIds[mainIds.length-1]];
     if(first&&last){
-      lines+=`<line x1="${first.x+PNW/2}" y1="${first.y}" x2="${last.x+PNW/2}" y2="${last.y+PNH}" stroke="#2e3350" stroke-width="3"/>`;
+      lines+=`<line x1="${first.x+PNW/2}" y1="${first.y}" x2="${last.x+PNW/2}" y2="${last.y+PNH}" stroke="#9bacc8" stroke-width="3"/>`;
     }
   }
 
@@ -699,9 +699,9 @@ function renderPipeCanvas(zone){
     if(n.mainNext&&pos[n.mainNext]){
       const np=pos[n.mainNext];
       if(p.axis==='v'){
-        lines+=`<line x1="${cx}" y1="${by}" x2="${np.x+PNW/2}" y2="${np.y}" stroke="#3a4060" stroke-width="2"/>`;
+        lines+=`<line x1="${cx}" y1="${by}" x2="${np.x+PNW/2}" y2="${np.y}" stroke="#9bacc8" stroke-width="2"/>`;
       } else {
-        lines+=`<line x1="${rx}" y1="${cy}" x2="${np.x}" y2="${np.y+PNH/2}" stroke="#3a4060" stroke-width="2"/>`;
+        lines+=`<line x1="${rx}" y1="${cy}" x2="${np.x}" y2="${np.y+PNH/2}" stroke="#9bacc8" stroke-width="2"/>`;
       }
     }
 
@@ -709,9 +709,9 @@ function renderPipeCanvas(zone){
     if(n.branchNext&&pos[n.branchNext]){
       const bp=pos[n.branchNext];
       if(p.axis==='v'){
-        lines+=`<line x1="${rx}" y1="${cy}" x2="${bp.x}" y2="${bp.y+PNH/2}" stroke="#3a4060" stroke-width="2"/>`;
+        lines+=`<line x1="${rx}" y1="${cy}" x2="${bp.x}" y2="${bp.y+PNH/2}" stroke="#9bacc8" stroke-width="2"/>`;
       } else {
-        lines+=`<line x1="${cx}" y1="${by}" x2="${bp.x+PNW/2}" y2="${bp.y}" stroke="#3a4060" stroke-width="2"/>`;
+        lines+=`<line x1="${cx}" y1="${by}" x2="${bp.x+PNW/2}" y2="${bp.y}" stroke="#9bacc8" stroke-width="2"/>`;
       }
     }
   }
@@ -728,11 +728,11 @@ function renderPipeCanvas(zone){
     if(!n.mainNext){
       if(p.axis==='v'){
         const bx=cx-13, btnY=by+V_STEP/2-13;
-        lines+=`<line x1="${cx}" y1="${by}" x2="${cx}" y2="${btnY+13}" stroke="#2e3350" stroke-width="1.5" stroke-dasharray="4,3"/>`;
+        lines+=`<line x1="${cx}" y1="${by}" x2="${cx}" y2="${btnY+13}" stroke="#9bacc8" stroke-width="1.5" stroke-dasharray="4,3"/>`;
         addBtns+=`<button class="pipe-add" style="left:${bx}px;top:${btnY}px" title="아래 추가" onclick="openAddPopup('${zone.id}','${id}','main',event)">+</button>`;
       } else {
         const btnX=rx+H_STEP/2-13, bty=cy-13;
-        lines+=`<line x1="${rx}" y1="${cy}" x2="${btnX+13}" y2="${cy}" stroke="#2e3350" stroke-width="1.5" stroke-dasharray="4,3"/>`;
+        lines+=`<line x1="${rx}" y1="${cy}" x2="${btnX+13}" y2="${cy}" stroke="#9bacc8" stroke-width="1.5" stroke-dasharray="4,3"/>`;
         addBtns+=`<button class="pipe-add" style="left:${btnX}px;top:${bty}px" title="우측 추가" onclick="openAddPopup('${zone.id}','${id}','main',event)">+</button>`;
       }
     }
@@ -741,11 +741,11 @@ function renderPipeCanvas(zone){
     if(n.type==='junction'&&!n.branchNext){
       if(p.axis==='v'){
         const btnX=rx+H_STEP/2-13, bty=cy-13;
-        lines+=`<line x1="${rx}" y1="${cy}" x2="${btnX+13}" y2="${cy}" stroke="#2e3350" stroke-width="1.5" stroke-dasharray="4,3"/>`;
+        lines+=`<line x1="${rx}" y1="${cy}" x2="${btnX+13}" y2="${cy}" stroke="#9bacc8" stroke-width="1.5" stroke-dasharray="4,3"/>`;
         addBtns+=`<button class="pipe-add" style="left:${btnX}px;top:${bty}px" title="분기 추가" onclick="openAddPopup('${zone.id}','${id}','branch',event)">+</button>`;
       } else {
         const bx=cx-13, btnY=by+BR_ROW/2-13;
-        lines+=`<line x1="${cx}" y1="${by}" x2="${cx}" y2="${btnY+13}" stroke="#2e3350" stroke-width="1.5" stroke-dasharray="4,3"/>`;
+        lines+=`<line x1="${cx}" y1="${by}" x2="${cx}" y2="${btnY+13}" stroke="#9bacc8" stroke-width="1.5" stroke-dasharray="4,3"/>`;
         addBtns+=`<button class="pipe-add" style="left:${bx}px;top:${btnY}px" title="하위 분기 추가" onclick="openAddPopup('${zone.id}','${id}','branch',event)">+</button>`;
       }
     }
@@ -1190,7 +1190,7 @@ function schematicSVG(type){
   const FBG=8;
   const FL_OFFSET=FBW+FBG;
   const RI_SEP=32;
-  const MAIN_LW=108;
+  const MAIN_LW=88;
   const TOP_PAD=20;
   const MAIN_PAD=50;
 
@@ -1233,20 +1233,19 @@ function schematicSVG(type){
   // Floor level guide lines
   for(let i=0;i<floorOrder.length;i++){
     const fy=rowY(i);
-    buf+=`<line x1="${MAIN_LW}" y1="${fy}" x2="${lastRX}" y2="${fy}" stroke="#1e2238" stroke-width="0.7" stroke-dasharray="4,6"/>`;
-  }
+      }
 
   // MAIN pipe
   const mainR=calcMainType(type);
   buf+=`<line x1="${MAIN_LW}" y1="${mainLineY}" x2="${lastRX}" y2="${mainLineY}" stroke="#f7a64f" stroke-width="3"/>`;
-  buf+=`<rect x="4" y="${mainLineY-26}" width="${MAIN_LW-8}" height="52" rx="5" fill="#1a1d27" stroke="#f7a64f" stroke-width="1.5"/>`;
-  buf+=`<text x="${MAIN_LW/2}" y="${mainLineY-12}" text-anchor="middle" fill="#e8ecf4" font-size="9.5" font-weight="700" font-family="Malgun Gothic,sans-serif">MAIN관</text>`;
+  buf+=`<rect x="4" y="${mainLineY-22}" width="${MAIN_LW-8}" height="44" rx="5" fill="#ffffff" stroke="#d97706" stroke-width="1.5"/>`;
+  buf+=`<text x="${MAIN_LW/2}" y="${mainLineY-9}" text-anchor="middle" fill="#1a2a4a" font-size="9.5" font-weight="700" font-family="Malgun Gothic,sans-serif">MAIN관</text>`;
   if(isCW){
-    buf+=`<text x="${MAIN_LW/2}" y="${mainLineY+3}" text-anchor="middle" fill="#4f8ef7" font-size="8.5" font-family="Malgun Gothic,sans-serif">급수 ${ps(mainR.cwPipe)}</text>`;
-    buf+=`<text x="${MAIN_LW/2}" y="${mainLineY+16}" text-anchor="middle" fill="#e05c8a" font-size="8.5" font-family="Malgun Gothic,sans-serif">급탕 ${ps(mainR.hwPipe)}</text>`;
+    buf+=`<text x="${MAIN_LW/2}" y="${mainLineY+3}" text-anchor="middle" fill="#2563eb" font-size="8.5" font-family="Malgun Gothic,sans-serif">급수 ${ps(mainR.cwPipe)}</text>`;
+    buf+=`<text x="${MAIN_LW/2}" y="${mainLineY+13}" text-anchor="middle" fill="#db2777" font-size="8.5" font-family="Malgun Gothic,sans-serif">급탕 ${ps(mainR.hwPipe)}</text>`;
   } else {
-    buf+=`<text x="${MAIN_LW/2}" y="${mainLineY+3}" text-anchor="middle" fill="#e05c5c" font-size="8.5" font-family="Malgun Gothic,sans-serif">오수 ${ps(mainR.sewPipe)}</text>`;
-    buf+=`<text x="${MAIN_LW/2}" y="${mainLineY+16}" text-anchor="middle" fill="#a07cf7" font-size="8.5" font-family="Malgun Gothic,sans-serif">배수 ${ps(mainR.wstPipe)}</text>`;
+    buf+=`<text x="${MAIN_LW/2}" y="${mainLineY+3}" text-anchor="middle" fill="#dc2626" font-size="8.5" font-family="Malgun Gothic,sans-serif">오수 ${ps(mainR.sewPipe)}</text>`;
+    buf+=`<text x="${MAIN_LW/2}" y="${mainLineY+13}" text-anchor="middle" fill="#7c3aed" font-size="8.5" font-family="Malgun Gothic,sans-serif">배수 ${ps(mainR.wstPipe)}</text>`;
   }
 
   // Risers
@@ -1254,7 +1253,7 @@ function schematicSVG(type){
   for(let ri_i=0;ri_i<riserData.length;ri_i++){
     const {ri,rr,colW}=riserData[ri_i];
     const rx=rX[ri_i];
-    const rColor='#38c9a0';
+    const rColor='#059669';
     const isTermRiser=(ri_i===numRisers-1);
     const rrCum=isTermRiser?null:sumRisersCum(risers.slice(ri_i),type);
 
@@ -1294,11 +1293,11 @@ function schematicSVG(type){
       const flCum=isTermFloor?flOwn:sumFloorsCum(cumFls,type);
 
       buf+=schFloorBox(rx-FBG-FBW,fy-FBH/2,FBW,FBH,fl.name,flOwn,flCum,isCW);
-      buf+=`<circle cx="${rx}" cy="${fy}" r="5" fill="${rColor}" stroke="#0f1117" stroke-width="1.2"/>`;
+      buf+=`<circle cx="${rx}" cy="${fy}" r="5" fill="${rColor}" stroke="#ffffff" stroke-width="1.5"/>`;
 
       const numZones=fl.zoneIds.length;
       if(numZones)
-        buf+=`<line x1="${rx}" y1="${fy}" x2="${rx+COL_PAD+numZones*(ZW+ZG)}" y2="${fy}" stroke="#3a4060" stroke-width="1.5"/>`;
+        buf+=`<line x1="${rx}" y1="${fy}" x2="${rx+COL_PAD+numZones*(ZW+ZG)}" y2="${fy}" stroke="#9bacc8" stroke-width="1.5"/>`;
 
       let zx=rx+COL_PAD;
       for(let zi=0;zi<numZones;zi++){
@@ -1317,8 +1316,8 @@ function schematicSVG(type){
     // Direct zones (no floor)
     if(hasDirect){
       const nd=ri.zoneIds.length;
-      buf+=`<line x1="${rx}" y1="${pseudoY}" x2="${rx+COL_PAD+nd*(ZW+ZG)}" y2="${pseudoY}" stroke="#3a4060" stroke-width="1.5"/>`;
-      buf+=`<circle cx="${rx}" cy="${pseudoY}" r="5" fill="${rColor}" stroke="#0f1117" stroke-width="1.2"/>`;
+      buf+=`<line x1="${rx}" y1="${pseudoY}" x2="${rx+COL_PAD+nd*(ZW+ZG)}" y2="${pseudoY}" stroke="#9bacc8" stroke-width="1.5"/>`;
+      buf+=`<circle cx="${rx}" cy="${pseudoY}" r="5" fill="${rColor}" stroke="#ffffff" stroke-width="1.5"/>`;
       let zx2=rx+COL_PAD;
       for(let zi=0;zi<nd;zi++){
         const zid=ri.zoneIds[zi];
@@ -1343,32 +1342,32 @@ function schematicSVG(type){
 function schZoneBox(x,y,w,h,name,zrOwn,zrCum,isCW){
   const stroke=isCW?'#4f8ef7':'#e05c5c';
   const cx=x+w/2;
-  let b=`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="5" fill="#1a1d27" stroke="${stroke}" stroke-width="1.5"/>`;
-  b+=`<text x="${cx}" y="${y+14}" text-anchor="middle" fill="#e8ecf4" font-size="9.5" font-weight="700" font-family="Malgun Gothic,sans-serif">${esc(name)}</text>`;
-  b+=`<line x1="${x+4}" y1="${y+20}" x2="${x+w-4}" y2="${y+20}" stroke="#2e3350" stroke-width="0.8"/>`;
+  let b=`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="5" fill="#ffffff" stroke="${stroke}" stroke-width="1.5"/>`;
+  b+=`<text x="${cx}" y="${y+14}" text-anchor="middle" fill="#1a2a4a" font-size="9.5" font-weight="700" font-family="Malgun Gothic,sans-serif">${esc(name)}</text>`;
+  b+=`<line x1="${x+4}" y1="${y+20}" x2="${x+w-4}" y2="${y+20}" stroke="#d0d8ee" stroke-width="0.8"/>`;
   if(!zrCum){
-    b+=`<text x="${cx}" y="${y+31}" text-anchor="middle" fill="#8892aa" font-size="7.5" font-family="Malgun Gothic,sans-serif">개별관</text>`;
+    b+=`<text x="${cx}" y="${y+31}" text-anchor="middle" fill="#5a6b85" font-size="7.5" font-family="Malgun Gothic,sans-serif">개별관</text>`;
     if(isCW){
-      if(zrOwn.cwPipe)  b+=`<text x="${cx}" y="${y+45}" text-anchor="middle" fill="#4f8ef7" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zrOwn.cwPipe)}</text>`;
-      if(zrOwn.hwPipe)  b+=`<text x="${cx}" y="${y+59}" text-anchor="middle" fill="#e05c8a" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zrOwn.hwPipe)}</text>`;
+      if(zrOwn.cwPipe)  b+=`<text x="${cx}" y="${y+45}" text-anchor="middle" fill="#2563eb" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zrOwn.cwPipe)}</text>`;
+      if(zrOwn.hwPipe)  b+=`<text x="${cx}" y="${y+59}" text-anchor="middle" fill="#db2777" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zrOwn.hwPipe)}</text>`;
     } else {
-      if(zrOwn.sewPipe) b+=`<text x="${cx}" y="${y+45}" text-anchor="middle" fill="#e05c5c" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zrOwn.sewPipe)}</text>`;
-      if(zrOwn.wstPipe) b+=`<text x="${cx}" y="${y+59}" text-anchor="middle" fill="#a07cf7" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zrOwn.wstPipe)}</text>`;
+      if(zrOwn.sewPipe) b+=`<text x="${cx}" y="${y+45}" text-anchor="middle" fill="#dc2626" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zrOwn.sewPipe)}</text>`;
+      if(zrOwn.wstPipe) b+=`<text x="${cx}" y="${y+59}" text-anchor="middle" fill="#7c3aed" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zrOwn.wstPipe)}</text>`;
     }
   } else {
-    b+=`<line x1="${cx}" y1="${y+20}" x2="${cx}" y2="${y+h-4}" stroke="#2e3350" stroke-width="0.8"/>`;
-    b+=`<text x="${x+w/4}" y="${y+31}" text-anchor="middle" fill="#8892aa" font-size="7.5" font-family="Malgun Gothic,sans-serif">개별관</text>`;
-    b+=`<text x="${x+3*w/4}" y="${y+31}" text-anchor="middle" fill="#8892aa" font-size="7.5" font-family="Malgun Gothic,sans-serif">누적관</text>`;
+    b+=`<line x1="${cx}" y1="${y+20}" x2="${cx}" y2="${y+h-4}" stroke="#d0d8ee" stroke-width="0.8"/>`;
+    b+=`<text x="${x+w/4}" y="${y+31}" text-anchor="middle" fill="#5a6b85" font-size="7.5" font-family="Malgun Gothic,sans-serif">개별관</text>`;
+    b+=`<text x="${x+3*w/4}" y="${y+31}" text-anchor="middle" fill="#5a6b85" font-size="7.5" font-family="Malgun Gothic,sans-serif">누적관</text>`;
     if(isCW){
-      if(zrOwn.cwPipe)  b+=`<text x="${x+w/4}"   y="${y+45}" text-anchor="middle" fill="#4f8ef7" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zrOwn.cwPipe)}</text>`;
-      if(zrOwn.hwPipe)  b+=`<text x="${x+w/4}"   y="${y+59}" text-anchor="middle" fill="#e05c8a" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zrOwn.hwPipe)}</text>`;
-      if(zrCum.cwPipe)  b+=`<text x="${x+3*w/4}" y="${y+45}" text-anchor="middle" fill="#4f8ef7" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zrCum.cwPipe)}</text>`;
-      if(zrCum.hwPipe)  b+=`<text x="${x+3*w/4}" y="${y+59}" text-anchor="middle" fill="#e05c8a" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zrCum.hwPipe)}</text>`;
+      if(zrOwn.cwPipe)  b+=`<text x="${x+w/4}"   y="${y+45}" text-anchor="middle" fill="#2563eb" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zrOwn.cwPipe)}</text>`;
+      if(zrOwn.hwPipe)  b+=`<text x="${x+w/4}"   y="${y+59}" text-anchor="middle" fill="#db2777" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zrOwn.hwPipe)}</text>`;
+      if(zrCum.cwPipe)  b+=`<text x="${x+3*w/4}" y="${y+45}" text-anchor="middle" fill="#2563eb" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zrCum.cwPipe)}</text>`;
+      if(zrCum.hwPipe)  b+=`<text x="${x+3*w/4}" y="${y+59}" text-anchor="middle" fill="#db2777" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zrCum.hwPipe)}</text>`;
     } else {
-      if(zrOwn.sewPipe) b+=`<text x="${x+w/4}"   y="${y+45}" text-anchor="middle" fill="#e05c5c" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zrOwn.sewPipe)}</text>`;
-      if(zrOwn.wstPipe) b+=`<text x="${x+w/4}"   y="${y+59}" text-anchor="middle" fill="#a07cf7" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zrOwn.wstPipe)}</text>`;
-      if(zrCum.sewPipe) b+=`<text x="${x+3*w/4}" y="${y+45}" text-anchor="middle" fill="#e05c5c" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zrCum.sewPipe)}</text>`;
-      if(zrCum.wstPipe) b+=`<text x="${x+3*w/4}" y="${y+59}" text-anchor="middle" fill="#a07cf7" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zrCum.wstPipe)}</text>`;
+      if(zrOwn.sewPipe) b+=`<text x="${x+w/4}"   y="${y+45}" text-anchor="middle" fill="#dc2626" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zrOwn.sewPipe)}</text>`;
+      if(zrOwn.wstPipe) b+=`<text x="${x+w/4}"   y="${y+59}" text-anchor="middle" fill="#7c3aed" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zrOwn.wstPipe)}</text>`;
+      if(zrCum.sewPipe) b+=`<text x="${x+3*w/4}" y="${y+45}" text-anchor="middle" fill="#dc2626" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zrCum.sewPipe)}</text>`;
+      if(zrCum.wstPipe) b+=`<text x="${x+3*w/4}" y="${y+59}" text-anchor="middle" fill="#7c3aed" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(zrCum.wstPipe)}</text>`;
     }
   }
   return b;
@@ -1378,22 +1377,22 @@ function schZoneBox(x,y,w,h,name,zrOwn,zrCum,isCW){
 function schFloorBox(x,y,w,h,flName,flOwn,flCum,isCW){
   const stroke=isCW?'#4f8ef7':'#e05c5c';
   const cx=x+w/2;
-  let b=`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="5" fill="#1a1d27" stroke="${stroke}" stroke-width="1.2"/>`;
-  b+=`<text x="${cx}" y="${y+13}" text-anchor="middle" fill="#e8ecf4" font-size="9" font-weight="700" font-family="Malgun Gothic,sans-serif">${esc(flName)}</text>`;
-  b+=`<line x1="${x+4}" y1="${y+18}" x2="${x+w-4}" y2="${y+18}" stroke="#2e3350" stroke-width="0.8"/>`;
-  b+=`<line x1="${cx}" y1="${y+18}" x2="${cx}" y2="${y+h-4}" stroke="#2e3350" stroke-width="0.8"/>`;
-  b+=`<text x="${x+w/4}" y="${y+28}" text-anchor="middle" fill="#8892aa" font-size="7" font-family="Malgun Gothic,sans-serif">층자체</text>`;
-  b+=`<text x="${x+3*w/4}" y="${y+28}" text-anchor="middle" fill="#8892aa" font-size="7" font-family="Malgun Gothic,sans-serif">전체누적</text>`;
+  let b=`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="5" fill="#ffffff" stroke="${stroke}" stroke-width="1.2"/>`;
+  b+=`<text x="${cx}" y="${y+13}" text-anchor="middle" fill="#1a2a4a" font-size="9" font-weight="700" font-family="Malgun Gothic,sans-serif">${esc(flName)}</text>`;
+  b+=`<line x1="${x+4}" y1="${y+18}" x2="${x+w-4}" y2="${y+18}" stroke="#d0d8ee" stroke-width="0.8"/>`;
+  b+=`<line x1="${cx}" y1="${y+18}" x2="${cx}" y2="${y+h-4}" stroke="#d0d8ee" stroke-width="0.8"/>`;
+  b+=`<text x="${x+w/4}" y="${y+28}" text-anchor="middle" fill="#5a6b85" font-size="7" font-family="Malgun Gothic,sans-serif">층자체</text>`;
+  b+=`<text x="${x+3*w/4}" y="${y+28}" text-anchor="middle" fill="#5a6b85" font-size="7" font-family="Malgun Gothic,sans-serif">전체누적</text>`;
   if(isCW){
-    if(flOwn.cwPipe) b+=`<text x="${x+w/4}"   y="${y+41}" text-anchor="middle" fill="#4f8ef7" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(flOwn.cwPipe)}</text>`;
-    if(flOwn.hwPipe) b+=`<text x="${x+w/4}"   y="${y+53}" text-anchor="middle" fill="#e05c8a" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(flOwn.hwPipe)}</text>`;
-    if(flCum.cwPipe) b+=`<text x="${x+3*w/4}" y="${y+41}" text-anchor="middle" fill="#4f8ef7" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(flCum.cwPipe)}</text>`;
-    if(flCum.hwPipe) b+=`<text x="${x+3*w/4}" y="${y+53}" text-anchor="middle" fill="#e05c8a" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(flCum.hwPipe)}</text>`;
+    if(flOwn.cwPipe) b+=`<text x="${x+w/4}"   y="${y+41}" text-anchor="middle" fill="#2563eb" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(flOwn.cwPipe)}</text>`;
+    if(flOwn.hwPipe) b+=`<text x="${x+w/4}"   y="${y+53}" text-anchor="middle" fill="#db2777" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(flOwn.hwPipe)}</text>`;
+    if(flCum.cwPipe) b+=`<text x="${x+3*w/4}" y="${y+41}" text-anchor="middle" fill="#2563eb" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(flCum.cwPipe)}</text>`;
+    if(flCum.hwPipe) b+=`<text x="${x+3*w/4}" y="${y+53}" text-anchor="middle" fill="#db2777" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(flCum.hwPipe)}</text>`;
   } else {
-    if(flOwn.sewPipe) b+=`<text x="${x+w/4}"   y="${y+41}" text-anchor="middle" fill="#e05c5c" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(flOwn.sewPipe)}</text>`;
-    if(flOwn.wstPipe) b+=`<text x="${x+w/4}"   y="${y+53}" text-anchor="middle" fill="#a07cf7" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(flOwn.wstPipe)}</text>`;
-    if(flCum.sewPipe) b+=`<text x="${x+3*w/4}" y="${y+41}" text-anchor="middle" fill="#e05c5c" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(flCum.sewPipe)}</text>`;
-    if(flCum.wstPipe) b+=`<text x="${x+3*w/4}" y="${y+53}" text-anchor="middle" fill="#a07cf7" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(flCum.wstPipe)}</text>`;
+    if(flOwn.sewPipe) b+=`<text x="${x+w/4}"   y="${y+41}" text-anchor="middle" fill="#dc2626" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(flOwn.sewPipe)}</text>`;
+    if(flOwn.wstPipe) b+=`<text x="${x+w/4}"   y="${y+53}" text-anchor="middle" fill="#7c3aed" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(flOwn.wstPipe)}</text>`;
+    if(flCum.sewPipe) b+=`<text x="${x+3*w/4}" y="${y+41}" text-anchor="middle" fill="#dc2626" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(flCum.sewPipe)}</text>`;
+    if(flCum.wstPipe) b+=`<text x="${x+3*w/4}" y="${y+53}" text-anchor="middle" fill="#7c3aed" font-size="9" font-family="Malgun Gothic,sans-serif">${ps(flCum.wstPipe)}</text>`;
   }
   return b;
 }
@@ -1401,31 +1400,31 @@ function schFloorBox(x,y,w,h,flName,flOwn,flCum,isCW){
 // Riser box: 자체 | 전체누적 (single col if rrCum==null = terminal riser)
 function schRiserBox(x,y,w,h,riName,rrOwn,rrCum,isCW,stroke){
   const cx=x+w/2;
-  let b=`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="5" fill="#1a1d27" stroke="${stroke}" stroke-width="1.5"/>`;
-  b+=`<text x="${cx}" y="${y+13}" text-anchor="middle" fill="#e8ecf4" font-size="9.5" font-weight="700" font-family="Malgun Gothic,sans-serif">${esc(riName)}</text>`;
-  b+=`<line x1="${x+4}" y1="${y+18}" x2="${x+w-4}" y2="${y+18}" stroke="#2e3350" stroke-width="0.8"/>`;
+  let b=`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="5" fill="#ffffff" stroke="${stroke}" stroke-width="1.5"/>`;
+  b+=`<text x="${cx}" y="${y+13}" text-anchor="middle" fill="#1a2a4a" font-size="9.5" font-weight="700" font-family="Malgun Gothic,sans-serif">${esc(riName)}</text>`;
+  b+=`<line x1="${x+4}" y1="${y+18}" x2="${x+w-4}" y2="${y+18}" stroke="#d0d8ee" stroke-width="0.8"/>`;
   if(!rrCum){
     if(isCW){
-      if(rrOwn.cwPipe)  b+=`<text x="${cx}" y="${y+31}" text-anchor="middle" fill="#4f8ef7" font-size="8.5" font-family="Malgun Gothic,sans-serif">급수 ${ps(rrOwn.cwPipe)}</text>`;
-      if(rrOwn.hwPipe)  b+=`<text x="${cx}" y="${y+44}" text-anchor="middle" fill="#e05c8a" font-size="8.5" font-family="Malgun Gothic,sans-serif">급탕 ${ps(rrOwn.hwPipe)}</text>`;
+      if(rrOwn.cwPipe)  b+=`<text x="${cx}" y="${y+31}" text-anchor="middle" fill="#2563eb" font-size="8.5" font-family="Malgun Gothic,sans-serif">급수 ${ps(rrOwn.cwPipe)}</text>`;
+      if(rrOwn.hwPipe)  b+=`<text x="${cx}" y="${y+44}" text-anchor="middle" fill="#db2777" font-size="8.5" font-family="Malgun Gothic,sans-serif">급탕 ${ps(rrOwn.hwPipe)}</text>`;
     } else {
-      if(rrOwn.sewPipe) b+=`<text x="${cx}" y="${y+31}" text-anchor="middle" fill="#e05c5c" font-size="8.5" font-family="Malgun Gothic,sans-serif">오수 ${ps(rrOwn.sewPipe)}</text>`;
-      if(rrOwn.wstPipe) b+=`<text x="${cx}" y="${y+44}" text-anchor="middle" fill="#a07cf7" font-size="8.5" font-family="Malgun Gothic,sans-serif">배수 ${ps(rrOwn.wstPipe)}</text>`;
+      if(rrOwn.sewPipe) b+=`<text x="${cx}" y="${y+31}" text-anchor="middle" fill="#dc2626" font-size="8.5" font-family="Malgun Gothic,sans-serif">오수 ${ps(rrOwn.sewPipe)}</text>`;
+      if(rrOwn.wstPipe) b+=`<text x="${cx}" y="${y+44}" text-anchor="middle" fill="#7c3aed" font-size="8.5" font-family="Malgun Gothic,sans-serif">배수 ${ps(rrOwn.wstPipe)}</text>`;
     }
   } else {
-    b+=`<line x1="${cx}" y1="${y+18}" x2="${cx}" y2="${y+h-4}" stroke="#2e3350" stroke-width="0.8"/>`;
-    b+=`<text x="${x+w/4}" y="${y+27}" text-anchor="middle" fill="#8892aa" font-size="7" font-family="Malgun Gothic,sans-serif">자체</text>`;
-    b+=`<text x="${x+3*w/4}" y="${y+27}" text-anchor="middle" fill="#8892aa" font-size="7" font-family="Malgun Gothic,sans-serif">전체누적</text>`;
+    b+=`<line x1="${cx}" y1="${y+18}" x2="${cx}" y2="${y+h-4}" stroke="#d0d8ee" stroke-width="0.8"/>`;
+    b+=`<text x="${x+w/4}" y="${y+27}" text-anchor="middle" fill="#5a6b85" font-size="7" font-family="Malgun Gothic,sans-serif">자체</text>`;
+    b+=`<text x="${x+3*w/4}" y="${y+27}" text-anchor="middle" fill="#5a6b85" font-size="7" font-family="Malgun Gothic,sans-serif">전체누적</text>`;
     if(isCW){
-      if(rrOwn.cwPipe)  b+=`<text x="${x+w/4}"   y="${y+38}" text-anchor="middle" fill="#4f8ef7" font-size="8.5" font-family="Malgun Gothic,sans-serif">${ps(rrOwn.cwPipe)}</text>`;
-      if(rrOwn.hwPipe)  b+=`<text x="${x+w/4}"   y="${y+51}" text-anchor="middle" fill="#e05c8a" font-size="8.5" font-family="Malgun Gothic,sans-serif">${ps(rrOwn.hwPipe)}</text>`;
-      if(rrCum.cwPipe)  b+=`<text x="${x+3*w/4}" y="${y+38}" text-anchor="middle" fill="#4f8ef7" font-size="8.5" font-family="Malgun Gothic,sans-serif">${ps(rrCum.cwPipe)}</text>`;
-      if(rrCum.hwPipe)  b+=`<text x="${x+3*w/4}" y="${y+51}" text-anchor="middle" fill="#e05c8a" font-size="8.5" font-family="Malgun Gothic,sans-serif">${ps(rrCum.hwPipe)}</text>`;
+      if(rrOwn.cwPipe)  b+=`<text x="${x+w/4}"   y="${y+38}" text-anchor="middle" fill="#2563eb" font-size="8.5" font-family="Malgun Gothic,sans-serif">${ps(rrOwn.cwPipe)}</text>`;
+      if(rrOwn.hwPipe)  b+=`<text x="${x+w/4}"   y="${y+51}" text-anchor="middle" fill="#db2777" font-size="8.5" font-family="Malgun Gothic,sans-serif">${ps(rrOwn.hwPipe)}</text>`;
+      if(rrCum.cwPipe)  b+=`<text x="${x+3*w/4}" y="${y+38}" text-anchor="middle" fill="#2563eb" font-size="8.5" font-family="Malgun Gothic,sans-serif">${ps(rrCum.cwPipe)}</text>`;
+      if(rrCum.hwPipe)  b+=`<text x="${x+3*w/4}" y="${y+51}" text-anchor="middle" fill="#db2777" font-size="8.5" font-family="Malgun Gothic,sans-serif">${ps(rrCum.hwPipe)}</text>`;
     } else {
-      if(rrOwn.sewPipe) b+=`<text x="${x+w/4}"   y="${y+38}" text-anchor="middle" fill="#e05c5c" font-size="8.5" font-family="Malgun Gothic,sans-serif">${ps(rrOwn.sewPipe)}</text>`;
-      if(rrOwn.wstPipe) b+=`<text x="${x+w/4}"   y="${y+51}" text-anchor="middle" fill="#a07cf7" font-size="8.5" font-family="Malgun Gothic,sans-serif">${ps(rrOwn.wstPipe)}</text>`;
-      if(rrCum.sewPipe) b+=`<text x="${x+3*w/4}" y="${y+38}" text-anchor="middle" fill="#e05c5c" font-size="8.5" font-family="Malgun Gothic,sans-serif">${ps(rrCum.sewPipe)}</text>`;
-      if(rrCum.wstPipe) b+=`<text x="${x+3*w/4}" y="${y+51}" text-anchor="middle" fill="#a07cf7" font-size="8.5" font-family="Malgun Gothic,sans-serif">${ps(rrCum.wstPipe)}</text>`;
+      if(rrOwn.sewPipe) b+=`<text x="${x+w/4}"   y="${y+38}" text-anchor="middle" fill="#dc2626" font-size="8.5" font-family="Malgun Gothic,sans-serif">${ps(rrOwn.sewPipe)}</text>`;
+      if(rrOwn.wstPipe) b+=`<text x="${x+w/4}"   y="${y+51}" text-anchor="middle" fill="#7c3aed" font-size="8.5" font-family="Malgun Gothic,sans-serif">${ps(rrOwn.wstPipe)}</text>`;
+      if(rrCum.sewPipe) b+=`<text x="${x+3*w/4}" y="${y+38}" text-anchor="middle" fill="#dc2626" font-size="8.5" font-family="Malgun Gothic,sans-serif">${ps(rrCum.sewPipe)}</text>`;
+      if(rrCum.wstPipe) b+=`<text x="${x+3*w/4}" y="${y+51}" text-anchor="middle" fill="#7c3aed" font-size="8.5" font-family="Malgun Gothic,sans-serif">${ps(rrCum.wstPipe)}</text>`;
     }
   }
   return b;
