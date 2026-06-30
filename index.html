@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -180,8 +180,8 @@ select:focus{outline:none;border-color:var(--accent)}
   <button class="tab-btn" onclick="switchTab(1)">② 급수/급탕 연결</button>
   <button class="tab-btn" onclick="switchTab(2)">③ 오배수 연결</button>
   <button class="tab-btn" onclick="switchTab(3)">④ MAIN관</button>
-  <button class="tab-btn" onclick="switchTab(4)">⑤ 메인관 결과</button>
-  <button class="tab-btn" onclick="switchTab(5)">⑥ 압력검토</button>
+  <button class="tab-btn" onclick="switchTab(4)">⑤ 압력검토</button>
+  <button class="tab-btn" onclick="switchTab(5)">⑥ 메인관 결과</button>
 </div>
 
 <div class="tab-pane active" id="tab0">
@@ -203,10 +203,12 @@ select:focus{outline:none;border-color:var(--accent)}
 <div class="tab-pane" id="tab3">
   <div class="main-panel" id="mainPipePanel"></div>
 </div>
-<div class="tab-pane" id="tab4">
+<div class="tab-pane" id="tab4" style="overflow-y:auto">
+  <div id="pressurePane"></div>
+</div>
+<div class="tab-pane" id="tab5" style="overflow-y:auto">
   <div class="main-panel" id="resultPanel"></div>
 </div>
-<div class="tab-pane" id="pressurePane"></div>
 
 <div id="modalOverlay" class="modal-overlay" style="display:none"></div>
 
@@ -478,8 +480,8 @@ function renderTab(i){
   if(i===1){renderCWTab();}
   if(i===2){renderDRTab();}
   if(i===3){renderMainPipeTab();}
-  if(i===4){renderResult();}
-  if(i===5){renderPressureTab();}
+  if(i===4){renderPressureTab();}
+  if(i===5){renderResult();}
 }
 function renderAll(){renderTab(activeTab);}
 
@@ -2094,7 +2096,7 @@ function printPDF(){
   const cwSvgRaw=schematicSVG('cw');
   // Remove outer div wrapper, strip explicit width/height to let CSS scale it
   const cwSvgScaled=cwSvgRaw
-    .replace(/<div[^>]*>/g,'').replace(/</div>/g,'')
+    .replace(/<div[^>]*>/g,'').replace(/<\/div>/g,'')
     .replace(/(<svgs)[^>]*(>)/,(m,a,b)=>{
       const vb=m.match(/viewBox="([^"]+)"/);
       const vbAttr=vb?`viewBox="${vb[1]}"`:(()=>{
@@ -2119,7 +2121,7 @@ function printPDF(){
   const dm=calcMainType('dr');
   const drSvgRaw=schematicSVG('dr');
   const drSvgScaled=drSvgRaw
-    .replace(/<div[^>]*>/g,'').replace(/</div>/g,'')
+    .replace(/<div[^>]*>/g,'').replace(/<\/div>/g,'')
     .replace(/(<svgs)[^>]*(>)/,(m,a,b)=>{
       const vb=m.match(/viewBox="([^"]+)"/);
       const vbAttr=vb?`viewBox="${vb[1]}"`:(()=>{
@@ -2220,481 +2222,6 @@ function showModal(ph,title,cb){
     if(el){el.focus();el.addEventListener('keydown',e=>{if(e.key==='Enter')confirmModal();if(e.key==='Escape')closeModal();});}
   },30);
 }
-function confirmModal(){const v=document.getElementById('minp')?.value||'';const cb=window._mcb;closeModal();if(cb)cb(v);}
-function closeModal(){document.getElementById('modalOverlay').style.display='none';window._mcb=null;}
-
-// ── Init ───────────────────────────────────────────────────────────────────────
-document.getElementById('projectName').addEventListener('change',function(){S.projectName=this.value;});
-renderAll();
-
-// ── Pressure loss (Hazen-Williams) ────────────────────────────────────────────
-function hwCoeff(mat){return mat==='copper'?130:mat==='stainless'?140:150;}
-function frictionLossKPa(Q_Lmin,D_mm,L_m,mat){
-  if(!Q_Lmin||!D_mm||!L_m)return 0;
-  const C=hwCoeff(mat),Q=Q_Lmin/60000,D=D_mm/1000;
-  const J=10.67*Math.pow(Q,1.852)/(Math.pow(C,1.852)*Math.pow(D,4.87));
-  return J*L_m*9.81;
-}
-function elevLossKPa(h_m){return h_m*9.81;}
-const PIPE_SIZES_ALL=[15,20,25,32,40,50,65,80,100,125,150];
-function pipeNextSize(d){const i=PIPE_SIZES_ALL.indexOf(d);return(i>=0&&i<PIPE_SIZES_ALL.length-1)?PIPE_SIZES_ALL[i+1]:d;}
-
-function calcAllPressurePaths(type){
-  const P=S.pressure,isCW=type==='cw',isTop=S.mainLocation==='top';
-  const mat=P.material,floorH=P.floorH,mainLen=P.mainLen,branchLen=P.branchLen;
-  const risers=S[type].risers,floors=S[type].floors;
-  const mainR=calcMainType(type);
-  const mainQ=isCW?mainR.cwQ:mainR.hwQ;
-  const mainD=isCW?mainR.cwPipe:mainR.hwPipe;
-  const mainFriction=frictionLossKPa(mainQ,mainD,mainLen,mat);
-  const paths=[];
-
-  for(const ri of risers){
-    const rr=calcRiser(ri,type);
-    const riserQ=isCW?rr.cwQ:rr.hwQ;
-    const riserD=isCW?rr.cwPipe:rr.hwPipe;
-    const riFloors=ri.floorIds.map(fid=>floors.find(f=>f.id===fid)).filter(Boolean);
-
-    for(let fi=0;fi<riFloors.length;fi++){
-      const fl=riFloors[fi];
-      const flR=calcFloor(fl,type);
-      const flQ=isCW?flR.cwQ:flR.hwQ;
-      const flD=isCW?flR.cwPipe:flR.hwPipe;
-      // Elevation: isTop=true → going down (gain), isTop=false → going up (loss)
-      const elevFloors=isTop?(fi+1):(riFloors.length-fi);
-      const elevM=elevFloors*floorH;
-      const rawElev=elevLossKPa(elevM);
-      const elevLoss=isTop?-rawElev:rawElev;
-      const riserFriction=frictionLossKPa(riserQ,riserD,elevM,mat);
-      const branchFriction=frictionLossKPa(flQ,flD,branchLen,mat);
-
-      const flZones=fl.zoneIds.map(zid=>S.zones.find(z=>z.id===zid)).filter(Boolean);
-      for(const z of flZones){
-        const zr=calcZone(z);
-        const zQ=isCW?zr.cwQ:zr.hwQ;
-        const zD=isCW?zr.cwPipe:zr.hwPipe;
-        if(!zQ||!zD)continue;
-        const zoneFriction=frictionLossKPa(zQ,zD,3,mat);
-        const totalLoss=mainFriction+riserFriction+branchFriction+zoneFriction+elevLoss;
-        paths.push({
-          label:`${ri.name} → ${fl.name} → ${z.name}`,
-          segments:[
-            {name:'MAIN관',Q:mainQ,D:mainD,L:mainLen,friction:mainFriction,elev:0},
-            {name:ri.name+' 수직',Q:riserQ,D:riserD,L:elevM,friction:riserFriction,elev:elevLoss},
-            {name:fl.name+' 분기',Q:flQ,D:flD,L:branchLen,friction:branchFriction,elev:0},
-            {name:z.name,Q:zQ,D:zD,L:3,friction:zoneFriction,elev:0}
-          ],
-          totalLoss,residual:P.supplyKPa-totalLoss,ok:(P.supplyKPa-totalLoss)>=P.minResidualKPa
-        });
-      }
-    }
-
-    // Direct zones (no floor)
-    for(const zid of ri.zoneIds){
-      const z=S.zones.find(z=>z.id===zid);if(!z)continue;
-      const zr=calcZone(z);
-      const zQ=isCW?zr.cwQ:zr.hwQ;
-      const zD=isCW?zr.cwPipe:zr.hwPipe;
-      if(!zQ||!zD)continue;
-      const elevM=floorH;
-      const elevLoss=isTop?-elevLossKPa(elevM):elevLossKPa(elevM);
-      const riserFriction=frictionLossKPa(riserQ,riserD,elevM,mat);
-      const zoneFriction=frictionLossKPa(zQ,zD,3,mat);
-      const totalLoss=mainFriction+riserFriction+zoneFriction+elevLoss;
-      paths.push({
-        label:`${ri.name} → ${z.name}`,
-        segments:[
-          {name:'MAIN관',Q:mainQ,D:mainD,L:mainLen,friction:mainFriction,elev:0},
-          {name:ri.name+' 수직',Q:riserQ,D:riserD,L:elevM,friction:riserFriction,elev:elevLoss},
-          {name:z.name,Q:zQ,D:zD,L:3,friction:zoneFriction,elev:0}
-        ],
-        totalLoss,residual:P.supplyKPa-totalLoss,ok:(P.supplyKPa-totalLoss)>=P.minResidualKPa
-      });
-    }
-  }
-  paths.sort((a,b)=>a.residual-b.residual);
-  return paths;
-}
-
-function renderPressurePathResult(paths,type,isCW){
-  const P=S.pressure;
-  if(!paths.length)return`<div class="empty">계산 가능한 경로 없음 (입상관·층·화장실 설정 필요)</div>`;
-  const critical=paths[0];
-  const critColor=critical.ok?'var(--accent2)':'var(--red)';
-  let h=`<div style="background:var(--surface2);border:1.5px solid ${critColor};border-radius:8px;padding:12px;margin-bottom:16px">
-    <div style="font-size:10px;color:var(--text2);margin-bottom:4px">임계경로 (최소 잔압)</div>
-    <div style="font-size:12px;font-weight:700;color:${critColor};margin-bottom:10px">${critical.ok?'✓':'⚠'} ${critical.label}</div>
-    <table style="width:100%;font-size:10.5px;border-collapse:collapse">
-      <tr style="color:var(--text3)">
-        <td style="padding:2px 5px">구간</td><td style="padding:2px 5px;text-align:center">관경</td>
-        <td style="padding:2px 5px;text-align:right">마찰손실</td><td style="padding:2px 5px;text-align:right">위치수두</td><td style="padding:2px 5px;text-align:right">잔압</td>
-      </tr>
-      <tr style="border-top:1px solid var(--border)">
-        <td style="padding:2px 5px;color:var(--accent)">공급압력</td><td></td><td></td><td></td>
-        <td style="padding:2px 5px;text-align:right;color:var(--accent);font-weight:700">+${P.supplyKPa.toFixed(0)}</td>
-      </tr>`;
-  let cum=P.supplyKPa;
-  for(const seg of critical.segments){
-    cum-=seg.friction; cum-=seg.elev;
-    const fCol=seg.friction>25?'var(--warn)':'var(--text)';
-    const elvStr=seg.elev===0?'─':(seg.elev>0?`−${seg.elev.toFixed(1)}`:`+${Math.abs(seg.elev).toFixed(1)}`);
-    h+=`<tr style="border-top:1px solid var(--border)">
-      <td style="padding:2px 5px">${seg.name}</td>
-      <td style="padding:2px 5px;text-align:center;color:var(--accent2)">${seg.D?seg.D+'A':'─'}</td>
-      <td style="padding:2px 5px;text-align:right;color:${fCol}">−${seg.friction.toFixed(1)}</td>
-      <td style="padding:2px 5px;text-align:right">${elvStr}</td>
-      <td style="padding:2px 5px;text-align:right">${cum.toFixed(1)}</td>
-    </tr>`;
-  }
-  const resCol=critical.ok?'var(--accent2)':'var(--red)';
-  h+=`<tr style="border-top:2px solid var(--border)">
-    <td colspan="4" style="padding:3px 5px;font-weight:700;font-size:11px">말단 잔압</td>
-    <td style="padding:3px 5px;text-align:right;font-weight:700;font-size:13px;color:${resCol}">${critical.residual.toFixed(1)} kPa</td>
-  </tr>
-  <tr><td colspan="5" style="padding:1px 5px;font-size:10px;color:${resCol}">${critical.ok?`✓ 기준 ${P.minResidualKPa}kPa 충족`:`⚠ 기준 ${P.minResidualKPa}kPa 미달 — 업사이즈 필요`}</td></tr>
-  </table>
-  <div style="font-size:10px;color:var(--text3);margin-top:6px;text-align:right">단위: kPa · 이음쇠 상당길이 미포함(실제 ×1.3~1.5 고려)</div>
-  </div>`;
-
-  // All paths summary
-  h+=`<div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px">전체 경로 잔압</div>
-  <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:16px">`;
-  for(const p of paths){
-    const pc=p.ok?'var(--accent2)':'var(--red)';
-    const pb=p.ok?'rgba(56,201,160,0.06)':'rgba(224,92,92,0.08)';
-    const bar=Math.max(0,Math.min(100,(p.residual/P.supplyKPa)*100));
-    const minBar=Math.max(0,Math.min(100,(P.minResidualKPa/P.supplyKPa)*100));
-    h+=`<div style="background:${pb};border:1px solid ${pc};border-radius:5px;padding:5px 8px">
-      <div style="display:flex;justify-content:space-between;margin-bottom:3px">
-        <span style="font-size:10.5px">${p.label}</span>
-        <span style="font-size:11px;font-weight:700;color:${pc}">${p.residual.toFixed(0)} kPa ${p.ok?'✓':'⚠'}</span>
-      </div>
-      <div style="position:relative;height:5px;background:var(--surface2);border-radius:3px">
-        <div style="height:100%;width:${bar}%;background:${pc};border-radius:3px"></div>
-        <div style="position:absolute;top:-1px;left:${minBar}%;width:1.5px;height:7px;background:var(--warn);border-radius:1px" title="최소기준 ${P.minResidualKPa}kPa"></div>
-      </div>
-    </div>`;
-  }
-  h+=`</div>`;
-
-  // Upsize suggestions
-  const failed=paths.filter(p=>!p.ok);
-  if(failed.length){
-    h+=`<div class="section" style="border-color:var(--warn);margin-bottom:0">
-    <div class="section-title" style="color:var(--warn)">⚠ 업사이즈 권장</div>`;
-    const seen=new Set();
-    for(const p of failed){
-      const worst=p.segments.reduce((a,b)=>a.friction>b.friction?a:b);
-      const key=worst.name+'_'+worst.D;
-      if(!seen.has(key)){
-        seen.add(key);
-        h+=`<div style="font-size:11px;padding:5px 0;border-bottom:1px solid var(--border)">
-          <b>${worst.name}</b>: <span style="color:var(--red)">${worst.D}A</span> → <span style="color:var(--accent2)">${pipeNextSize(worst.D)}A</span>
-          <span style="font-size:10px;color:var(--text3);margin-left:6px">마찰손실 ${worst.friction.toFixed(1)} kPa (최대 구간)</span>
-        </div>`;
-      }
-    }
-    h+=`</div>`;
-  }
-  return h;
-}
-
-function renderPressureTab(){
-  const el=document.getElementById('pressurePane');
-  if(!el)return;
-  const P=S.pressure;
-  const matOpts=[['pvc','PVC (C=150)'],['copper','동관 (C=130)'],['stainless','스테인리스 (C=140)']];
-  const inp=(key,val,min,max,step,note='')=>
-    `<input type="number" value="${val}" min="${min}" max="${max}" step="${step}"
-      onchange="setPressure('${key}',+this.value)"
-      style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:6px;font-size:12px;box-sizing:border-box">
-    ${note?`<div style="font-size:10px;color:var(--text3);margin-top:2px">${note}</div>`:''}`;
-
-  let h=`<div style="display:flex;height:100%;overflow:hidden">
-  <div style="width:240px;flex-shrink:0;border-right:1px solid var(--border);padding:14px;overflow-y:auto;background:var(--surface)">
-    <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:.5px">압력 설정</div>
-    <div style="margin-bottom:10px"><div style="font-size:10.5px;color:var(--text2);margin-bottom:3px">공급압력 (수도직결 or 펌프압력, kPa)</div>
-      ${inp('supplyKPa',P.supplyKPa,50,1000,10,'수도직결: 200~300 kPa / 펌프: 양정(m)×9.81')}</div>
-    <div style="margin-bottom:10px"><div style="font-size:10.5px;color:var(--text2);margin-bottom:3px">층고 (m)</div>
-      ${inp('floorH',P.floorH,2,10,0.1)}</div>
-    <div style="margin-bottom:10px"><div style="font-size:10.5px;color:var(--text2);margin-bottom:3px">배관 재질</div>
-      <select onchange="setPressure('material',this.value)"
-        style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:6px;font-size:12px">
-        ${matOpts.map(([v,l])=>`<option value="${v}" ${P.material===v?'selected':''}>${l}</option>`).join('')}
-      </select></div>
-    <div style="margin-bottom:10px"><div style="font-size:10.5px;color:var(--text2);margin-bottom:3px">MAIN관 수평길이 (m)</div>
-      ${inp('mainLen',P.mainLen,1,500,1)}</div>
-    <div style="margin-bottom:10px"><div style="font-size:10.5px;color:var(--text2);margin-bottom:3px">층당 수평배관 길이 (m)</div>
-      ${inp('branchLen',P.branchLen,1,100,1)}</div>
-    <div style="margin-bottom:6px"><div style="font-size:10.5px;color:var(--text2);margin-bottom:3px">최소 잔압 기준 (kPa)</div>
-      ${inp('minResidualKPa',P.minResidualKPa,30,200,5,'건물 내 기구 중 가장 높은 값 적용')}</div>
-    <details style="margin-bottom:10px">
-      <summary style="font-size:10px;color:var(--accent);cursor:pointer;padding:3px 0">▸ 기구별 최소 잔압 기준표 (KS B 6301)</summary>
-      <table style="width:100%;border-collapse:collapse;font-size:10px;margin-top:5px">
-        <tr style="background:var(--surface2)">
-          <th style="padding:3px 5px;text-align:left;color:var(--text2);font-weight:600;border-bottom:1px solid var(--border)">기구</th>
-          <th style="padding:3px 5px;text-align:center;color:var(--text2);font-weight:600;border-bottom:1px solid var(--border)">기준</th>
-        </tr>
-        <tr><td style="padding:3px 5px;border-bottom:1px solid var(--border)">일반 수전 (세면기·싱크)</td><td style="padding:3px 5px;text-align:center;color:var(--accent2);font-weight:700;border-bottom:1px solid var(--border)">70 kPa</td></tr>
-        <tr style="background:var(--surface2)"><td style="padding:3px 5px;border-bottom:1px solid var(--border)">샤워기</td><td style="padding:3px 5px;text-align:center;color:var(--accent2);font-weight:700;border-bottom:1px solid var(--border)">100 kPa</td></tr>
-        <tr><td style="padding:3px 5px;border-bottom:1px solid var(--border)">대·소변기 세정밸브</td><td style="padding:3px 5px;text-align:center;color:var(--accent2);font-weight:700;border-bottom:1px solid var(--border)">70 kPa</td></tr>
-        <tr style="background:var(--surface2)"><td style="padding:3px 5px;border-bottom:1px solid var(--border)">순간온수기 (가스·전기)</td><td style="padding:3px 5px;text-align:center;color:var(--warn);font-weight:700;border-bottom:1px solid var(--border)">100 kPa↑</td></tr>
-        <tr><td style="padding:3px 5px">세탁기</td><td style="padding:3px 5px;text-align:center;color:var(--text2);font-weight:700">50 kPa</td></tr>
-      </table>
-      <div style="font-size:9.5px;color:var(--text3);margin-top:4px;line-height:1.5">※ 순간온수기 있으면 100 kPa 적용<br>※ 건물 내 최고 기준값으로 통일 설정 권장</div>
-    </details>
-    <div style="font-size:10px;color:var(--text3);margin-top:16px;line-height:1.6;padding:8px;background:var(--surface2);border-radius:6px">
-      ※ 배관 길이는 실제 도면 기준으로 수정 필요<br>
-      ※ 이음쇠 상당길이 미포함 (실제 ×1.3~1.5 적용 권장)<br>
-      ※ 급탕은 급수 계산 기준으로 참고
-    </div>
-  </div>
-  <div style="flex:1;overflow-y:auto;padding:16px">`;
-
-  // CW results
-  h+=`<div class="section" style="margin-bottom:20px">
-    <div class="section-title">급수 압력검토</div>`;
-  if(S.cw.risers.length){
-    const cwPaths=calcAllPressurePaths('cw');
-    h+=renderPressurePathResult(cwPaths,'cw',true);
-  } else {
-    h+=`<div class="empty">탭 ②에서 입상관을 설정하세요</div>`;
-  }
-  h+=`</div>`;
-
-  // HW note (급탕)
-  h+=`<div class="section">
-    <div class="section-title">급탕 압력검토</div>`;
-  const hwPaths=calcAllPressurePaths('cw').filter(p=>p.segments.some(s=>s.Q>0));
-  // For HW, recalculate using hwQ/hwPipe
-  const hwPathsReal=[];
-  if(S.cw.risers.length){
-    const P=S.pressure,isTop=S.mainLocation==='top';
-    const mat=P.material;
-    const mainR=calcMainType('cw');
-    const mainQ=mainR.hwQ,mainD=mainR.hwPipe;
-    const mainFriction=frictionLossKPa(mainQ,mainD,P.mainLen,mat);
-    for(const ri of S.cw.risers){
-      const rr=calcRiser(ri,'cw');
-      const riserQ=rr.hwQ,riserD=rr.hwPipe;
-      const riFloors=ri.floorIds.map(fid=>S.cw.floors.find(f=>f.id===fid)).filter(Boolean);
-      for(let fi=0;fi<riFloors.length;fi++){
-        const fl=riFloors[fi];
-        const flR=calcFloor(fl,'cw');
-        const flQ=flR.hwQ,flD=flR.hwPipe;
-        if(!flQ)continue;
-        const elevFloors=isTop?(fi+1):(riFloors.length-fi);
-        const elevM=elevFloors*P.floorH;
-        const elevLoss=isTop?-elevLossKPa(elevM):elevLossKPa(elevM);
-        const riserFriction=frictionLossKPa(riserQ,riserD,elevM,mat);
-        const branchFriction=frictionLossKPa(flQ,flD,P.branchLen,mat);
-        const flZones=fl.zoneIds.map(zid=>S.zones.find(z=>z.id===zid)).filter(Boolean).filter(z=>!z.elecHW);
-        for(const z of flZones){
-          const zr=calcZone(z);
-          const zQ=zr.hwQ,zD=zr.hwPipe;
-          if(!zQ||!zD)continue;
-          const zoneFriction=frictionLossKPa(zQ,zD,3,mat);
-          const totalLoss=mainFriction+riserFriction+branchFriction+zoneFriction+elevLoss;
-          hwPathsReal.push({
-            label:`${ri.name} → ${fl.name} → ${z.name}`,
-            segments:[
-              {name:'MAIN관(급탕)',Q:mainQ,D:mainD,L:P.mainLen,friction:mainFriction,elev:0},
-              {name:ri.name+' 수직',Q:riserQ,D:riserD,L:elevM,friction:riserFriction,elev:elevLoss},
-              {name:fl.name+' 분기',Q:flQ,D:flD,L:P.branchLen,friction:branchFriction,elev:0},
-              {name:z.name,Q:zQ,D:zD,L:3,friction:zoneFriction,elev:0}
-            ],
-            totalLoss,residual:P.supplyKPa-totalLoss,ok:(P.supplyKPa-totalLoss)>=P.minResidualKPa
-          });
-        }
-      }
-    }
-    hwPathsReal.sort((a,b)=>a.residual-b.residual);
-  }
-  if(hwPathsReal.length){
-    h+=renderPressurePathResult(hwPathsReal,'cw',false);
-  } else {
-    h+=`<div class="empty">급탕 배관이 없거나 (모든 화장실 개별전기온수기) 탭 ②에서 입상관 설정 필요</div>`;
-  }
-  h+=`</div></div></div>`;
-  el.innerHTML=h;
-}
-
-function setPressure(key,val){S.pressure[key]=val;renderPressureTab();}
-
-
-// ── PDF Print ──────────────────────────────────────────────────────────────────
-function printPDF(){
-  const proj=document.getElementById('projectName').value||'위생배관 관경 계산서';
-  const today=new Date().toLocaleDateString('ko-KR',{year:'numeric',month:'2-digit',day:'2-digit'});
-
-  // ── CSS ──
-  const css=`
-    *{box-sizing:border-box;margin:0;padding:0;}
-    body{font-family:'Malgun Gothic','맑은 고딕',sans-serif;font-size:10pt;color:#111;background:#fff}
-    @page{size:A4 landscape;margin:12mm 14mm 12mm 14mm}
-    .page{width:100%;page-break-after:always;padding:0}
-    .page:last-child{page-break-after:avoid}
-    h1{font-size:14pt;font-weight:700;color:#1a2a6c;margin-bottom:2mm}
-    h2{font-size:11pt;font-weight:700;color:#1a2a6c;margin-bottom:2mm}
-    .header-bar{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #1a2a6c;padding-bottom:3mm;margin-bottom:4mm}
-    .project-info{font-size:8pt;color:#555}
-    .basis-box{background:#f4f6fb;border:1px solid #c8d0e8;border-radius:4px;padding:3mm 4mm;margin-bottom:4mm;font-size:8pt;line-height:1.7}
-    .basis-box b{color:#1a2a6c}
-    table{width:100%;border-collapse:collapse;font-size:9pt;margin-bottom:4mm}
-    th{background:#1a2a6c;color:#fff;padding:2mm 3mm;text-align:center;font-weight:600;font-size:8.5pt}
-    td{padding:1.8mm 3mm;border:1px solid #ccc;text-align:center;vertical-align:middle}
-    tr:nth-child(even) td{background:#f8f9fd}
-    .result-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:3mm;margin-bottom:4mm}
-    .result-card{border:1.5px solid #c8d0e8;border-radius:4px;padding:3mm;text-align:center}
-    .result-card .lbl{font-size:8pt;color:#555;margin-bottom:1mm}
-    .result-card .val{font-size:15pt;font-weight:700}
-    .result-card .sub{font-size:7.5pt;color:#777;margin-top:1mm}
-    .cw-color{color:#1a56c4}.hw-color{color:#c41a1a}
-    .sew-color{color:#b52b2b}.wst-color{color:#6b3ac4}
-    .note-box{background:#fffbe6;border:1px solid #e8c84a;border-radius:4px;padding:2.5mm 4mm;font-size:7.5pt;color:#555;line-height:1.6}
-    .schematic-page{display:flex;flex-direction:column;height:100%}
-    .schema-wrap{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden}
-    .schema-wrap svg{max-width:100%;max-height:160mm;height:auto}
-    .footer{font-size:7.5pt;color:#999;text-align:right;margin-top:3mm}
-    .tag-elecHW{font-size:7pt;color:#c41a1a;background:#fff0f0;border:1px solid #f7c5c5;border-radius:3px;padding:0 2mm;margin-left:2mm}
-    .section-label{font-size:8pt;font-weight:700;color:#1a2a6c;margin-bottom:1.5mm;padding-bottom:1mm;border-bottom:1px solid #c8d0e8}
-  `;
-
-  // ── HELPER ──
-  function row(cells,isHead=false){
-    return '<tr>'+cells.map(c=>isHead?`<th>${c}</th>`:`<td>${c}</td>`).join('')+'</tr>';
-  }
-  function hdr(proj,today,title,sub=''){
-    return `<div class="header-bar">
-      <div><h1>${title}</h1>${sub?`<div style="font-size:9pt;color:#555">${sub}</div>`:''}</div>
-      <div class="project-info"><b>프로젝트:</b> ${proj}<br><b>작성일:</b> ${today}</div>
-    </div>`;
-  }
-  function basis(){
-    return `<div class="basis-box">
-      <b>산정 기준</b> &nbsp;|&nbsp;
-      급수·급탕 관경: <b>기구급수 부하단위법</b> (Hunter's Curve, KS B 6301) — 기구별 급수 부하단위(L/min) 합산 후 동시사용 확률 적용 &nbsp;|&nbsp;
-      오수·배수 관경: <b>DFU(Drainage Fixture Unit)</b> 기준 (KS B 6301·건축기계설비 설계기준) &nbsp;|&nbsp;
-      동시사용률: 급수·급탕 <b>MAIN관 0.85</b> 적용 / 오배수 기구수별 동시사용계수 적용 &nbsp;|&nbsp;
-      압력손실: <b>Hazen-Williams 공식</b> (C값: PVC 150, 동관 130, STS 140)
-    </div>`;
-  }
-  function footer(){return `<div class="footer">※ 본 계산서는 위생배관 관경 산정 프로그램에 의해 자동 작성된 참고용 문서입니다. 최종 설계 적용 전 담당 기술사의 검토를 받으시기 바랍니다.</div>`;}
-
-  let pages='';
-
-  // ────────────────────────────────────────────────────────────────────────────
-  // PAGE 1 ~ N : 화장실별 관경 산정서
-  // ────────────────────────────────────────────────────────────────────────────
-  for(const z of S.zones){
-    const t=zoneFxTotals(z);
-    const r=calcZone(z);
-    const hasAnyFx=FX_KEYS.some(k=>t[k]>0);
-    if(!hasAnyFx) continue;
-
-    // Fixture table rows
-    const fxRows=FX_KEYS.filter(k=>t[k]>0).map(k=>{
-      const f=FX[k];
-      const n=t[k];
-      const cwTot=(f.cwQ*n).toFixed(1);
-      const hwTot=f.hot?(f.cwQ*n).toFixed(1):'─';
-      const dfuStr=f.dfu*n;
-      return row([f.name, n, `${f.cwQ} L/min`, cwTot+' L/min', f.hot?'○':'─',
-                  hwTot!=='─'?hwTot+' L/min':'─',
-                  f.drain==='sew'?dfuStr:'─', f.drain==='wst'?dfuStr:'─', f.dc+'A']);
-    }).join('');
-
-    const cwDFU=Object.keys(t).filter(k=>FX[k]&&t[k]>0).reduce((s,k)=>s+FX[k].cwQ*t[k],0);
-    const hwDFU=Object.keys(t).filter(k=>FX[k]&&FX[k].hot&&t[k]>0).reduce((s,k)=>s+FX[k].cwQ*t[k],0);
-
-    pages+=`<div class="page">
-      ${hdr(proj,today,'화장실 위생배관 관경 산정서',`${z.floor?z.floor+' / ':''}화장실명: ${z.name}${z.elecHW?' <span class=\"tag-elecHW\">개별전기온수기</span>':''}`)}
-      ${basis()}
-      <div class="section-label">기구 현황 및 부하 산정</div>
-      <table>
-        ${row(['기구명','수량','기구 급수량','급수 합계','온수','급탕 합계','오수 DFU','배수 DFU','최소 연결관경'],true)}
-        ${fxRows}
-        ${row(['<b>합 계</b>','─','─',`<b>${r.cwQ.toFixed(1)} L/min</b>`,'─',
-               r.hwQ>0?`<b>${r.hwQ.toFixed(1)} L/min</b>`:'─',
-               r.sewDFU>0?`<b>${r.sewDFU}</b>`:'─',
-               r.wstDFU>0?`<b>${r.wstDFU}</b>`:'─','─'])}
-      </table>
-      <div class="section-label" style="margin-top:2mm">관경 산정 결과</div>
-      <div class="result-grid">
-        <div class="result-card">
-          <div class="lbl">급수관</div>
-          <div class="val cw-color">${r.cwPipe?r.cwPipe+'A':'N/A'}</div>
-          <div class="sub">설계유량 ${r.cwQ.toFixed(1)} L/min</div>
-        </div>
-        <div class="result-card">
-          <div class="lbl">급탕관</div>
-          <div class="val hw-color">${z.elecHW?'개별온수기':r.hwPipe?r.hwPipe+'A':'N/A'}</div>
-          <div class="sub">${z.elecHW?'배관 불요':r.hwQ>0?'설계유량 '+r.hwQ.toFixed(1)+' L/min':'급탕 기구 없음'}</div>
-        </div>
-        <div class="result-card">
-          <div class="lbl">오수관</div>
-          <div class="val sew-color">${r.sewPipe?r.sewPipe+'A':'N/A'}</div>
-          <div class="sub">${r.sewDFU>0?'DFU: '+r.sewDFU:'오수 기구 없음'}</div>
-        </div>
-        <div class="result-card">
-          <div class="lbl">배수관</div>
-          <div class="val wst-color">${r.wstPipe?r.wstPipe+'A':'N/A'}</div>
-          <div class="sub">${r.wstDFU>0?'DFU: '+r.wstDFU:'배수 기구 없음'}</div>
-        </div>
-      </div>
-      <div class="note-box">
-        ※ 관경은 Hunter 곡선 적용 후 기구 최소 연결관경(KS B 6301)과 비교하여 큰 값으로 결정됩니다.<br>
-        ※ 오수관 최소 100A, 배수관 최소 50A 적용. 급수 설계유량은 동시사용률 미적용 개별 기구 합산값입니다.
-      </div>
-      ${footer()}
-    </div>`;
-  }
-
-  // ────────────────────────────────────────────────────────────────────────────
-  // PAGE N+1 : 급수/급탕 계통도
-  // ────────────────────────────────────────────────────────────────────────────
-  const cwSvg=schematicSVG('cw');
-  const cwSvgOnly=cwSvg.replace(/<div[^>]*>|<\/div>/g,'').trim();
-  const cm=calcMainType('cw');
-  pages+=`<div class="page schematic-page">
-    ${hdr(proj,today,'급수·급탕 계통도')}
-    ${basis()}
-    <div style="display:flex;gap:6mm;margin-bottom:3mm">
-      <div class="result-card" style="flex:1"><div class="lbl">급수 MAIN관</div><div class="val cw-color">${cm.cwPipe?cm.cwPipe+'A':'N/A'}</div><div class="sub">${cm.cwQ.toFixed(1)} L/min × 동시사용률 0.85</div></div>
-      <div class="result-card" style="flex:1"><div class="lbl">급탕 MAIN관</div><div class="val hw-color">${cm.hwPipe?cm.hwPipe+'A':'N/A'}</div><div class="sub">${cm.hwQ.toFixed(1)} L/min × 동시사용률 0.85</div></div>
-    </div>
-    <div class="schema-wrap">${cwSvgOnly}</div>
-    ${footer()}
-  </div>`;
-
-  // ────────────────────────────────────────────────────────────────────────────
-  // PAGE N+2 : 오배수 계통도
-  // ────────────────────────────────────────────────────────────────────────────
-  const drSvg=schematicSVG('dr');
-  const drSvgOnly=drSvg.replace(/<div[^>]*>|<\/div>/g,'').trim();
-  const dm=calcMainType('dr');
-  pages+=`<div class="page schematic-page">
-    ${hdr(proj,today,'오배수 계통도')}
-    ${basis()}
-    <div style="display:flex;gap:6mm;margin-bottom:3mm">
-      <div class="result-card" style="flex:1"><div class="lbl">오수 MAIN관</div><div class="val sew-color">${dm.sewPipe?dm.sewPipe+'A':'N/A'}</div><div class="sub">DFU: ${dm.sewDFU.toFixed(0)}</div></div>
-      <div class="result-card" style="flex:1"><div class="lbl">배수 MAIN관</div><div class="val wst-color">${dm.wstPipe?dm.wstPipe+'A':'N/A'}</div><div class="sub">DFU: ${dm.wstDFU.toFixed(0)}</div></div>
-    </div>
-    <div class="schema-wrap">${drSvgOnly}</div>
-    ${footer()}
-  </div>`;
-
-  // ── Open print window ──
-  const win=window.open('','_blank','width=1100,height=800');
-  win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
-    <title>${proj} — 위생배관 관경 계산서</title>
-    <style>${css}</style></head>
-  <body>${pages}</body></html>`);
-  win.document.close();
-  win.focus();
-  setTimeout(()=>win.print(),600);
-}
-
 </script>
 
 </body>
