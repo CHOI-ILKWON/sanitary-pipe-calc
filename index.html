@@ -6,9 +6,9 @@
 <title>위생배관 관경 계산서</title>
 <style>
 :root {
-  --bg:#0f1117; --surface:#1a1d27; --surface2:#22263a; --surface3:#2a2f47;
-  --border:#2e3350; --accent:#4f8ef7; --hot:#e05c8a; --drain:#a07cf7;
-  --red:#e05c5c; --accent2:#38c9a0; --warn:#f7a64f; --text:#e8ecf4; --text2:#8892aa;
+  --bg:#f0f3f9; --surface:#ffffff; --surface2:#f4f6fb; --surface3:#e8edf7;
+  --border:#d0d8ee; --accent:#2563eb; --hot:#db2777; --drain:#7c3aed;
+  --red:#dc2626; --accent2:#059669; --warn:#d97706; --text:#1a2a4a; --text2:#5a6b85;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--text);font:14px/1.5 'Malgun Gothic','Apple SD Gothic Neo',sans-serif;min-height:100vh}
@@ -27,7 +27,7 @@ header{position:sticky;top:0;z-index:100;background:var(--surface);border-bottom
 .btn:hover{opacity:.82}
 .btn-primary{background:var(--accent);color:#fff}
 .btn-danger{background:var(--red);color:#fff}
-.btn-success{background:var(--accent2);color:#0f1117}
+.btn-success{background:var(--accent2);color:#fff}
 .btn-ghost{background:transparent;color:var(--text2);border:1px solid var(--border)}
 .btn-sm{padding:3px 8px;font-size:11px}
 .badge{display:inline-block;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600}
@@ -35,7 +35,7 @@ header{position:sticky;top:0;z-index:100;background:var(--surface);border-bottom
 .badge-hw{background:rgba(224,92,138,.15);border:1px solid rgba(224,92,138,.4);color:var(--hot)}
 .badge-sew{background:rgba(224,92,92,.15);border:1px solid rgba(224,92,92,.4);color:var(--red)}
 .badge-wst{background:rgba(160,124,247,.15);border:1px solid rgba(160,124,247,.4);color:var(--drain)}
-.badge-na{background:rgba(136,146,170,.1);border:1px solid rgba(136,146,170,.2);color:var(--text2)}
+.badge-na{background:rgba(90,107,133,.08);border:1px solid rgba(90,107,133,.25);color:var(--text2)}
 .sidebar{width:220px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);overflow-y:auto;display:flex;flex-direction:column}
 .sidebar-hdr{padding:10px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
 .sidebar-title{font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px}
@@ -517,13 +517,24 @@ function chipsHTML(r){
 // ── P&ID Pipe Editor ───────────────────────────────────────────────────────────
 
 // Returns height (in rows) needed by a horizontal branch chain starting at id
-function branchHeight(id, nodes){
+// Max pixel-depth of sub-vertical chains hanging off a horizontal chain
+// (measured from the horizontal node's Y)
+function maxSubBottom(id, nodes){
   if(!id||!nodes[id]) return 0;
   const n=nodes[id];
-  let h=1;
-  if(n.branchNext) h=Math.max(h, 1+branchHeight(n.branchNext,nodes));
-  if(n.mainNext)   h=Math.max(h, branchHeight(n.mainNext,nodes));
-  return h;
+  let d=0;
+  if(n.branchNext) d=Math.max(d, vChainBottom(n.branchNext, BR_ROW, nodes));
+  if(n.mainNext)   d=Math.max(d, maxSubBottom(n.mainNext, nodes));
+  return d;
+}
+// Pixel depth of a vertical sub-chain whose root sits at 'offset' below its parent
+function vChainBottom(id, offset, nodes){
+  if(!id||!nodes[id]) return offset;
+  const n=nodes[id];
+  let d=offset;
+  if(n.branchNext) d=Math.max(d, offset+maxSubBottom(n.branchNext, nodes));
+  if(n.mainNext)   d=Math.max(d, vChainBottom(n.mainNext, offset+V_STEP, nodes));
+  return d;
 }
 
 function layoutPipe(zone){
@@ -538,8 +549,8 @@ function layoutPipe(zone){
     if(n.branchNext) placeH(n.branchNext, x+H_STEP, y);
     // main continues DOWN
     if(n.mainNext){
-      const bh=n.branchNext ? branchHeight(n.branchNext,nodes) : 0;
-      const dy=Math.max(V_STEP, bh*BR_ROW+20);
+      const bottomPx=n.branchNext ? maxSubBottom(n.branchNext,nodes) : 0;
+      const dy=Math.max(V_STEP, bottomPx+30);
       placeV(n.mainNext, x, y+dy);
     }
   }
