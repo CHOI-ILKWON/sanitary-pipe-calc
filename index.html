@@ -1769,8 +1769,8 @@ function renderPressureTab(){
   let h=`<div style="display:flex;height:100%;overflow:hidden">
   <div style="width:240px;flex-shrink:0;border-right:1px solid var(--border);padding:14px;overflow-y:auto;background:var(--surface)">
     <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:.5px">압력 설정</div>
-    <div style="margin-bottom:10px"><div style="font-size:10.5px;color:var(--text2);margin-bottom:3px">공급압력 (kPa)</div>
-      ${inp('supplyKPa',P.supplyKPa,50,1000,10,'수도직결 일반: 200~300 kPa')}</div>
+    <div style="margin-bottom:10px"><div style="font-size:10.5px;color:var(--text2);margin-bottom:3px">공급압력 (수도직결 or 펌프압력, kPa)</div>
+      ${inp('supplyKPa',P.supplyKPa,50,1000,10,'수도직결: 200~300 kPa / 펌프: 양정(m)×9.81')}</div>
     <div style="margin-bottom:10px"><div style="font-size:10.5px;color:var(--text2);margin-bottom:3px">층고 (m)</div>
       ${inp('floorH',P.floorH,2,10,0.1)}</div>
     <div style="margin-bottom:10px"><div style="font-size:10.5px;color:var(--text2);margin-bottom:3px">배관 재질</div>
@@ -2387,8 +2387,8 @@ function renderPressureTab(){
   let h=`<div style="display:flex;height:100%;overflow:hidden">
   <div style="width:240px;flex-shrink:0;border-right:1px solid var(--border);padding:14px;overflow-y:auto;background:var(--surface)">
     <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:.5px">압력 설정</div>
-    <div style="margin-bottom:10px"><div style="font-size:10.5px;color:var(--text2);margin-bottom:3px">공급압력 (kPa)</div>
-      ${inp('supplyKPa',P.supplyKPa,50,1000,10,'수도직결 일반: 200~300 kPa')}</div>
+    <div style="margin-bottom:10px"><div style="font-size:10.5px;color:var(--text2);margin-bottom:3px">공급압력 (수도직결 or 펌프압력, kPa)</div>
+      ${inp('supplyKPa',P.supplyKPa,50,1000,10,'수도직결: 200~300 kPa / 펌프: 양정(m)×9.81')}</div>
     <div style="margin-bottom:10px"><div style="font-size:10.5px;color:var(--text2);margin-bottom:3px">층고 (m)</div>
       ${inp('floorH',P.floorH,2,10,0.1)}</div>
     <div style="margin-bottom:10px"><div style="font-size:10.5px;color:var(--text2);margin-bottom:3px">배관 재질</div>
