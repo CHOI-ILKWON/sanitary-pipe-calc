@@ -1178,73 +1178,82 @@ function sumRisersCum(riserList,type){
 function schematicSVG(type){
   const isCW=type==='cw';
   const risers=S[type].risers, floors=S[type].floors;
-  if(!risers.length&&!floors.length) return `<div class="empty">탭 ②③에서 층과 입상관을 설정하세요.</div>`;
+  if(!risers.length&&!floors.length) return '<div class="empty">탭 ②③에서 층과 입상관을 설정하세요.</div>';
   const isTop=S.mainLocation==='top';
 
-  // Layout constants
-  const ZW=102, ZH=64;   // zone box = same size as floor box
-  const ZG=8;
-  const ROW_H=ZH+54;
-  const COL_PAD=28;
-  const FBW=102, FBH=64;
-  const FBG=8;
-  const FL_OFFSET=FBW+FBG;
-  const RI_SEP=32;
+  const FBW=102,FBH=64,FBG=8;
+  const ZW=102,ZH=64,ZG=8;
+  const FLOOR_H=FBH+44;
+  const ZONE_GAP=14;
+  const RISER_COL_GAP=20;
   const MAIN_LW=88;
   const TOP_PAD=20;
-  const MAIN_PAD=50;
+  const MAIN_PAD=48;
 
-  // Normalize floor name: "1층" = "1F" = "1" → same row
-  const _nfl=n=>n.trim().replace(/[층F]$/i,'').trim();
-  const floorNameToRow={}, floorRowArr=[];
+  const _nfl=n=>(n||'').trim().replace(/[층F]$/i,'').trim();
+  const _flNum=n=>{const v=parseFloat(_nfl(n));return isNaN(v)?999:v;};
+
+  const floorKeyToName={};
   for(const ri of risers){
+    for(const fid of ri.floorIds){
+      const fl=floors.find(f=>f.id===fid);
+      if(fl){const k=_nfl(fl.name);if(!(k in floorKeyToName))floorKeyToName[k]=fl.name;}
+    }
+    for(const zid of ri.zoneIds){
+      const z=S.zones.find(z=>z.id===zid);
+      if(z&&z.floor){const k=_nfl(z.floor);if(!(k in floorKeyToName))floorKeyToName[k]=z.floor;}
+    }
+  }
+  const sortedKeys=Object.keys(floorKeyToName).sort((a,b)=>_flNum(a)-_flNum(b));
+  if(!sortedKeys.length) return '<div class="empty">층 또는 화장실 정보를 입력하세요.</div>';
+  const numRows=sortedKeys.length;
+
+  const floorToRow={};
+  sortedKeys.forEach((k,i)=>{ floorToRow[k]=isTop?i:(numRows-1-i); });
+  const rowY=row=>TOP_PAD+row*FLOOR_H+FBH/2+10;
+
+  let mainLineY;
+  if(!isTop) mainLineY=TOP_PAD+numRows*FLOOR_H+10+MAIN_PAD;
+  else        mainLineY=TOP_PAD+FBH+24;
+
+  const riserData=risers.map((ri,ri_i)=>{
+    const rr=calcRiser(ri,type);
+    const rrCum=(ri_i===risers.length-1)?null:sumRisersCum(risers.slice(ri_i),type);
+    const floorZones={};
     for(const fid of ri.floorIds){
       const fl=floors.find(f=>f.id===fid);
       if(!fl) continue;
       const k=_nfl(fl.name);
-      if(!(k in floorNameToRow)){floorNameToRow[k]=floorRowArr.length;floorRowArr.push(k);}
+      if(!floorZones[k]) floorZones[k]={groupFloor:null,directZids:[]};
+      floorZones[k].groupFloor=fl;
     }
-  }
-  for(const fl of floors){
-    const k=_nfl(fl.name);
-    if(!(k in floorNameToRow)){floorNameToRow[k]=floorRowArr.length;floorRowArr.push(k);}
-  }
-  const numRows=floorRowArr.length||1;
-
-  // Riser column widths & X positions
-  const riserData=risers.map(ri=>{
-    let maxZ=1;
-    for(const fid of ri.floorIds){const fl=floors.find(f=>f.id===fid);if(fl)maxZ=Math.max(maxZ,fl.zoneIds.length);}
-    maxZ=Math.max(maxZ,ri.zoneIds.length,1);
-    return {ri,maxZ,colW:COL_PAD+maxZ*(ZW+ZG),rr:calcRiser(ri,type)};
+    for(const zid of ri.zoneIds){
+      const z=S.zones.find(z=>z.id===zid);
+      if(!z) continue;
+      const k=_nfl(z.floor||'');
+      if(!floorZones[k]) floorZones[k]={groupFloor:null,directZids:[]};
+      floorZones[k].directZids.push(zid);
+    }
+    const maxZ=Math.max(1,...Object.values(floorZones).map(fz=>
+      fz.groupFloor?fz.groupFloor.zoneIds.length:fz.directZids.length));
+    const colW=FBW+FBG+ZONE_GAP+maxZ*(ZW+ZG);
+    return {ri,rr,rrCum,floorZones,colW};
   });
-  const rX=[];
-  let curX=MAIN_LW+FL_OFFSET+16;
-  for(const rd of riserData){rX.push(curX);curX+=FL_OFFSET+rd.colW+RI_SEP;}
-  const svgW=Math.max(curX+10,500);
 
-  // Y positions
-  let rowY,mainLineY;
-  if(!isTop){
-    rowY=i=>TOP_PAD+i*ROW_H+FBH/2+10;
-    mainLineY=TOP_PAD+numRows*ROW_H+10+MAIN_PAD;
-  } else {
-    mainLineY=TOP_PAD+FBH+24; // riser box extends FBH/2+16=48px above mainLine; leave room
-    rowY=i=>mainLineY+MAIN_PAD+20+i*ROW_H+FBH/2;
+  let curColX=MAIN_LW+20;
+  const riserLineX=[];
+  for(const rd of riserData){
+    riserLineX.push(curColX+FBW+FBG);
+    curColX+=rd.colW+RISER_COL_GAP;
   }
-  const svgH=isTop?mainLineY+MAIN_PAD+20+numRows*ROW_H+30:mainLineY+FBH+30;
+  const svgW=Math.max(curColX+10,500);
+  const svgH=isTop?mainLineY+MAIN_PAD+numRows*FLOOR_H+30:mainLineY+FBH+30;
 
-  const floorRowIdx={};
-  for(const fl of floors){floorRowIdx[fl.id]=floorNameToRow[_nfl(fl.name)]??0;}
-
-  const lastRX=rX.length?rX[rX.length-1]:svgW-10;
   let buf='';
 
-  // Floor level guide lines (removed)
-
-  // MAIN pipe
   const mainR=calcMainType(type);
-  buf+=`<line x1="${MAIN_LW}" y1="${mainLineY}" x2="${lastRX}" y2="${mainLineY}" stroke="#f7a64f" stroke-width="3"/>`;
+  const lastRLX=riserLineX.length?riserLineX[riserLineX.length-1]:svgW-10;
+  buf+=`<line x1="${MAIN_LW}" y1="${mainLineY}" x2="${lastRLX}" y2="${mainLineY}" stroke="#f7a64f" stroke-width="3"/>`;
   buf+=`<rect x="4" y="${mainLineY-22}" width="${MAIN_LW-8}" height="44" rx="5" fill="#ffffff" stroke="#d97706" stroke-width="1.5"/>`;
   buf+=`<text x="${MAIN_LW/2}" y="${mainLineY-9}" text-anchor="middle" fill="#1a2a4a" font-size="9.5" font-weight="700" font-family="Malgun Gothic,sans-serif">MAIN관</text>`;
   if(isCW){
@@ -1255,91 +1264,66 @@ function schematicSVG(type){
     buf+=`<text x="${MAIN_LW/2}" y="${mainLineY+13}" text-anchor="middle" fill="#7c3aed" font-size="8.5" font-family="Malgun Gothic,sans-serif">배수 ${ps(mainR.wstPipe)}</text>`;
   }
 
-  // Risers
-  const numRisers=risers.length;
   for(let ri_i=0;ri_i<riserData.length;ri_i++){
-    const {ri,rr,colW}=riserData[ri_i];
-    const rx=rX[ri_i];
+    const {ri,rr,rrCum,floorZones}=riserData[ri_i];
+    const rlx=riserLineX[ri_i];
     const rColor='#059669';
-    const isTermRiser=(ri_i===numRisers-1);
-    const rrCum=isTermRiser?null:sumRisersCum(risers.slice(ri_i),type);
 
-    const hasDirect=ri.zoneIds.length>0;
-    const hasFloors=ri.floorIds.filter(fid=>floorRowIdx[fid]!==undefined).length>0;
-    const pseudoY=isTop?mainLineY+MAIN_PAD+10+FBH/2:mainLineY-MAIN_PAD-FBH/2;
+    const riKeys=Object.keys(floorZones).filter(k=>k in floorToRow);
+    if(!riKeys.length) continue;
+    const riRows=riKeys.map(k=>floorToRow[k]);
+    const minRow=Math.min(...riRows);
+    const maxRow=Math.max(...riRows);
 
-    // Riser vertical extent
-    let riserExtY=mainLineY;
-    if(hasFloors){
-      const ys=ri.floorIds.filter(fid=>floorRowIdx[fid]!==undefined).map(fid=>rowY(floorRowIdx[fid]));
-      riserExtY=isTop?Math.max(...ys):Math.min(...ys);
-    }
-    if(hasDirect) riserExtY=isTop?Math.max(riserExtY,pseudoY):Math.min(riserExtY,pseudoY);
+    const farY=isTop?rowY(maxRow):rowY(minRow);
+    if(!isTop) buf+=`<line x1="${rlx}" y1="${farY}" x2="${rlx}" y2="${mainLineY}" stroke="${rColor}" stroke-width="2.5"/>`;
+    else        buf+=`<line x1="${rlx}" y1="${mainLineY}" x2="${rlx}" y2="${farY}" stroke="${rColor}" stroke-width="2.5"/>`;
 
-    if(!isTop && riserExtY<mainLineY)
-      buf+=`<line x1="${rx}" y1="${riserExtY}" x2="${rx}" y2="${mainLineY}" stroke="${rColor}" stroke-width="2.5"/>`;
-    else if(isTop && riserExtY>mainLineY)
-      buf+=`<line x1="${rx}" y1="${mainLineY}" x2="${rx}" y2="${riserExtY}" stroke="${rColor}" stroke-width="2.5"/>`;
+    const rbY=isTop?mainLineY-(FBH+4):mainLineY+4;
+    buf+=schRiserBox(rlx-FBW/2,rbY,FBW,FBH,ri.name,rr,rrCum,isCW,rColor);
 
-    // Riser box near main
-    const riLY=mainLineY+(isTop?-(FBH/2+16):4);
-    buf+=schRiserBox(rx-FBW/2,riLY,FBW,FBH,ri.name,rr,rrCum,isCW,rColor);
+    const sortedRiKeys=riKeys.sort((a,b)=>isTop?(floorToRow[a]-floorToRow[b]):(floorToRow[b]-floorToRow[a]));
 
-    // Floors — sorted nearest-to-main first
-    const riFloors=ri.floorIds
-      .map(fid=>({fid,fl:floors.find(f=>f.id===fid)}))
-      .filter(o=>o.fl&&floorRowIdx[o.fid]!==undefined);
-    riFloors.sort((a,b)=>Math.abs(rowY(floorRowIdx[a.fid])-mainLineY)-Math.abs(rowY(floorRowIdx[b.fid])-mainLineY));
+    for(let fi=0;fi<sortedRiKeys.length;fi++){
+      const fk=sortedRiKeys[fi];
+      const {groupFloor,directZids}=floorZones[fk];
+      const fy=rowY(floorToRow[fk]);
+      const isTermFloor=(fi===sortedRiKeys.length-1);
+      const zids=groupFloor?groupFloor.zoneIds:directZids;
 
-    for(let fi=0;fi<riFloors.length;fi++){
-      const {fid,fl}=riFloors[fi];
-      const fy=rowY(floorRowIdx[fid]);
-      const isTermFloor=(fi===riFloors.length-1);
-      const flOwn=calcFloor(fl,type);
-      const cumFls=riFloors.slice(fi).map(o=>o.fl).filter(Boolean);
-      const flCum=isTermFloor?flOwn:sumFloorsCum(cumFls,type);
+      let flOwn,flCum;
+      if(groupFloor){
+        flOwn=calcFloor(groupFloor,type);
+        const cumFls=sortedRiKeys.slice(fi).map(k=>floorZones[k].groupFloor).filter(Boolean);
+        flCum=isTermFloor?flOwn:sumFloorsCum(cumFls,type);
+      } else {
+        const ownZs=directZids.map(id=>S.zones.find(z=>z.id===id)).filter(Boolean);
+        flOwn=sumZonesCum(ownZs);
+        if(isTermFloor){
+          flCum=flOwn;
+        } else {
+          const cumZs=sortedRiKeys.slice(fi).flatMap(k=>
+            floorZones[k].directZids.map(id=>S.zones.find(z=>z.id===id)).filter(Boolean));
+          flCum=sumZonesCum(cumZs);
+        }
+      }
 
-      buf+=schFloorBox(rx-FBG-FBW,fy-FBH/2,FBW,FBH,fl.name,flOwn,flCum,isCW);
-      buf+=`<circle cx="${rx}" cy="${fy}" r="5" fill="${rColor}" stroke="#ffffff" stroke-width="1.5"/>`;
-
-      const numZones=fl.zoneIds.length;
-      if(numZones)
-        buf+=`<line x1="${rx}" y1="${fy}" x2="${rx+COL_PAD+numZones*(ZW+ZG)}" y2="${fy}" stroke="#9bacc8" stroke-width="1.5"/>`;
-
-      let zx=rx+COL_PAD;
-      for(let zi=0;zi<numZones;zi++){
-        const zid=fl.zoneIds[zi];
+      const dispName=floorKeyToName[fk]||fk;
+      buf+=schFloorBox(rlx-FBG-FBW,fy-FBH/2,FBW,FBH,dispName,flOwn,flCum,isCW);
+      buf+=`<circle cx="${rlx}" cy="${fy}" r="5" fill="${rColor}" stroke="#ffffff" stroke-width="1.5"/>`;
+      if(zids.length)
+        buf+=`<line x1="${rlx}" y1="${fy}" x2="${rlx+ZONE_GAP+zids.length*(ZW+ZG)}" y2="${fy}" stroke="#9bacc8" stroke-width="1.5"/>`;
+      let zx=rlx+ZONE_GAP;
+      for(let zi=0;zi<zids.length;zi++){
+        const zid=zids[zi];
         const z=S.zones.find(z=>z.id===zid);
         if(!z){zx+=ZW+ZG;continue;}
         const zrOwn=calcZone(z);
-        const isTermZone=(zi===numZones-1);
-        const cumZs=fl.zoneIds.slice(zi).map(id=>S.zones.find(z=>z.id===id)).filter(Boolean);
+        const isTermZone=(zi===zids.length-1);
+        const cumZs=zids.slice(zi).map(id=>S.zones.find(z=>z.id===id)).filter(Boolean);
         const zrCum=isTermZone?null:sumZonesCum(cumZs);
         buf+=schZoneBox(zx,fy-ZH/2,ZW,ZH,z.name,zrOwn,zrCum,isCW);
         zx+=ZW+ZG;
-      }
-    }
-
-    // Direct zones (no floor) — exclude zones already shown in floor sections
-    if(hasDirect){
-      const shownInFloors=new Set(ri.floorIds.flatMap(fid=>{const fl=floors.find(f=>f.id===fid);return fl?fl.zoneIds:[];}));
-      const dZoneIds=ri.zoneIds.filter(zid=>!shownInFloors.has(zid));
-      if(dZoneIds.length){
-        const nd=dZoneIds.length;
-        buf+=`<line x1="${rx}" y1="${pseudoY}" x2="${rx+COL_PAD+nd*(ZW+ZG)}" y2="${pseudoY}" stroke="#9bacc8" stroke-width="1.5"/>`;
-        buf+=`<circle cx="${rx}" cy="${pseudoY}" r="5" fill="${rColor}" stroke="#ffffff" stroke-width="1.5"/>`;
-        let zx2=rx+COL_PAD;
-        for(let zi=0;zi<nd;zi++){
-          const zid=dZoneIds[zi];
-          const z=S.zones.find(z=>z.id===zid);
-          if(!z){zx2+=ZW+ZG;continue;}
-          const zrOwn=calcZone(z);
-          const isTermZone=(zi===nd-1);
-          const cumZs=dZoneIds.slice(zi).map(id=>S.zones.find(z=>z.id===id)).filter(Boolean);
-          const zrCum=isTermZone?null:sumZonesCum(cumZs);
-          buf+=schZoneBox(zx2,pseudoY-ZH/2,ZW,ZH,z.name,zrOwn,zrCum,isCW);
-          zx2+=ZW+ZG;
-        }
       }
     }
   }
@@ -1349,7 +1333,6 @@ function schematicSVG(type){
   </div>`;
 }
 
-// Zone box: single column if zrCum==null (terminal), else 개별관|누적관
 function schZoneBox(x,y,w,h,name,zrOwn,zrCum,isCW){
   const stroke=isCW?'#4f8ef7':'#e05c5c';
   const cx=x+w/2;
