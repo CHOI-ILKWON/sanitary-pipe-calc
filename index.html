@@ -519,24 +519,14 @@ function chipsHTML(r){
 // ── P&ID Pipe Editor ───────────────────────────────────────────────────────────
 
 // Returns height (in rows) needed by a horizontal branch chain starting at id
-// Max pixel-depth of sub-vertical chains hanging off a horizontal chain
-// (measured from the horizontal node's Y)
-function maxSubBottom(id, nodes){
+// How many horizontal rows does a branch chain tree occupy? (each row = BR_ROW px)
+function hChainRows(id, nodes){
   if(!id||!nodes[id]) return 0;
   const n=nodes[id];
-  let d=0;
-  if(n.branchNext) d=Math.max(d, vChainBottom(n.branchNext, BR_ROW, nodes));
-  if(n.mainNext)   d=Math.max(d, maxSubBottom(n.mainNext, nodes));
-  return d;
-}
-// Pixel depth of a vertical sub-chain whose root sits at 'offset' below its parent
-function vChainBottom(id, offset, nodes){
-  if(!id||!nodes[id]) return offset;
-  const n=nodes[id];
-  let d=offset;
-  if(n.branchNext) d=Math.max(d, offset+maxSubBottom(n.branchNext, nodes));
-  if(n.mainNext)   d=Math.max(d, vChainBottom(n.mainNext, offset+V_STEP, nodes));
-  return d;
+  let rows=1;
+  if(n.branchNext) rows=Math.max(rows, 1+hChainRows(n.branchNext,nodes));
+  if(n.mainNext)   rows=Math.max(rows, hChainRows(n.mainNext,nodes));
+  return rows;
 }
 
 function layoutPipe(zone){
@@ -551,8 +541,8 @@ function layoutPipe(zone){
     if(n.branchNext) placeH(n.branchNext, x+H_STEP, y);
     // main continues DOWN
     if(n.mainNext){
-      const bottomPx=n.branchNext ? maxSubBottom(n.branchNext,nodes) : 0;
-      const dy=Math.max(V_STEP, bottomPx+30);
+      const rows=n.branchNext ? hChainRows(n.branchNext,nodes) : 0;
+      const dy=Math.max(V_STEP, rows*BR_ROW+30);
       placeV(n.mainNext, x, y+dy);
     }
   }
@@ -564,7 +554,7 @@ function layoutPipe(zone){
     // main continues RIGHT
     if(n.mainNext) placeH(n.mainNext, x+H_STEP, y);
     // branch goes DOWN (sub-vertical pipe)
-    if(n.branchNext) placeV(n.branchNext, x, y+BR_ROW);
+    if(n.branchNext) placeH(n.branchNext, x, y+BR_ROW); // elbow: drop row, continue right
   }
 
   placeV(zone.pipe.rootId, MX, 30);
