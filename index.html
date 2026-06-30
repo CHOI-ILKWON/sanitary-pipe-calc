@@ -347,7 +347,7 @@ function wstSimult(cnt){
 function calcFloor(floor, type){
   const zs=floor.zoneIds.map(id=>S.zones.find(z=>z.id===id)).filter(Boolean);
   let cwQ=0,hwQ=0,sD=0,wD=0;
-  for(const z of zs){const r=calcZone(z);cwQ+=r.cwQ;hwQ+=r.hwQ;sD+=r.sewDFU;wD+=r.wstDFU;}
+  for(const z of zs){const r=calcZone(z);cwQ+=r.cwQ;if(!z.elecHW)hwQ+=r.hwQ;sD+=r.sewDFU;wD+=r.wstDFU;}
   return {cwQ,hwQ,sewDFU:sD,wstDFU:wD,
     cwPipe:flowPipe(cwQ),hwPipe:flowPipe(hwQ),
     sewPipe:sD>0?Math.max(sewPipe(sD),100):0,
@@ -368,12 +368,12 @@ function calcRiser(riser, type){
     }
   }
   for(const z of zones){
-    const r=calcZone(z);cwQ+=r.cwQ;hwQ+=r.hwQ;sD+=r.sewDFU;wD+=r.wstDFU;
+    const r=calcZone(z);cwQ+=r.cwQ;if(!z.elecHW)hwQ+=r.hwQ;sD+=r.sewDFU;wD+=r.wstDFU;
     const t=zoneFxTotals(z);
     for(const k of FX_KEYS){ if(FX[k].drain==='sew')sewCnt+=t[k]||0; else wstCnt+=t[k]||0; }
   }
   const items=floors.length+zones.length;
-  if(items>=2){cwQ*=0.9;hwQ*=0.9;}
+  // 동시사용률은 MAIN관에서만 적용 (CW/HW)
   const sf=sewSimult(sewCnt),wf=wstSimult(wstCnt);
   sD*=sf; wD*=wf;
   return {cwQ,hwQ,sewDFU:sD,wstDFU:wD,
@@ -420,8 +420,9 @@ function calcMainType(type){
   for(const zid of main.zoneIds){const z=S.zones.find(z=>z.id===zid);if(z){const res=calcZone(z);cwQ+=res.cwQ;hwQ+=res.hwQ;sD+=res.sewDFU;wD+=res.wstDFU;}}
   // include still-unassigned zones
   const aid=allAssignedZoneIds(type);
-  for(const z of S.zones){if(!aid.has(z.id)){const r=calcZone(z);cwQ+=r.cwQ;hwQ+=r.hwQ;sD+=r.sewDFU;wD+=r.wstDFU;}}
-  cwQ*=0.85;hwQ*=0.85;sD*=0.85;wD*=0.85;
+  for(const z of S.zones){if(!aid.has(z.id)){const r=calcZone(z);cwQ+=r.cwQ;if(!z.elecHW)hwQ+=r.hwQ;sD+=r.sewDFU;wD+=r.wstDFU;}}
+  // 동시사용률 MAIN관에서만 적용 (급수/급탕 0.85, 오배수는 입상관에서 이미 적용)
+  cwQ*=0.85; hwQ*=0.85;
   return {cwQ,hwQ,sewDFU:sD,wstDFU:wD,
     cwPipe:flowPipe(cwQ),hwPipe:flowPipe(hwQ),
     sewPipe:sD>0?Math.max(sewPipe(sD),100):0,
@@ -445,7 +446,7 @@ function newPipeNode(type){
 function newZone(name,floor=''){
   const start=newPipeNode('start');
   return {
-    id:uid(), name:name||'Zone 1', floor,
+    id:uid(), name:name||'Zone 1', floor, elecHW:false,
     pipe:{nodes:{[start.id]:start}, rootId:start.id}
   };
 }
@@ -769,6 +770,10 @@ function renderEditor(){
     <div class="zone-editor-row">
       <input class="zone-name-inp" value="${esc(zone.name)}" onchange="setZoneName('${zone.id}',this.value)" placeholder="Zone 이름">
       <input class="zone-name-inp" style="width:100px;font-size:13px;font-weight:400" value="${esc(zone.floor)}" placeholder="층 입력(예:1층)" onchange="setZoneFloor('${zone.id}',this.value)">
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);cursor:pointer;white-space:nowrap">
+        <input type="checkbox" ${zone.elecHW?'checked':''} onchange="setZoneElecHW('${zone.id}',this.checked)">
+        개별전기온수기 사용 <span style="color:var(--text3);font-size:11px">(체크 시 급탕관 누적 제외)</span>
+      </label>
     </div>
     <div class="zone-chips" id="zone-chips-${zone.id}">${chipsHTML(r)}</div>
   </div>`;
@@ -1139,7 +1144,7 @@ function renderResult(){
 // ── Schematic cumulative helpers ──────────────────────────────────────────────
 function sumZonesCum(zoneList){
   let cwQ=0,hwQ=0,sD=0,wD=0;
-  for(const z of zoneList){const r=calcZone(z);cwQ+=r.cwQ;hwQ+=r.hwQ;sD+=r.sewDFU;wD+=r.wstDFU;}
+  for(const z of zoneList){const r=calcZone(z);cwQ+=r.cwQ;if(!z.elecHW)hwQ+=r.hwQ;sD+=r.sewDFU;wD+=r.wstDFU;}
   return {cwQ,hwQ,sewDFU:sD,wstDFU:wD,
     cwPipe:flowPipe(cwQ),hwPipe:flowPipe(hwQ),
     sewPipe:sD>0?Math.max(sewPipe(sD),100):0,
