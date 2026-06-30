@@ -600,11 +600,12 @@ function renderPipeNode(id, n, p, zoneId, r){
     const fxSingle=Object.fromEntries(FX_KEYS.map(k=>[k,0]));
     fxSingle[n.fxKey]=n.qty||1;
     const singleNode={fixtures:fxSingle, children:[]};
+    let sr;
     if(n.fxKey==='shw'){
       // 샤워기: 급수/급탕만, 배수(wst) 제외
       const sr0=calcNode(singleNode);
-      var sr={...sr0, wstDFU:0, wstPipe:0};
-    } else { var sr=calcNode(singleNode); }
+      sr={...sr0, wstDFU:0, wstPipe:0};
+    } else { sr=calcNode(singleNode); }
     pipeInfo=`<div class="pipe-both-cols">
       <div class="pipe-col">
         <div class="pipe-col-hdr">누적관</div>
@@ -2042,7 +2043,7 @@ function _printPDF(){
               <div class="val cw-color">${r.cwPipe?r.cwPipe+'A':'N/A'}</div>
               <div class="sub">${r.cwQ.toFixed(1)} L/min</div></div>
             <div class="result-card"><div class="lbl">급탕관</div>
-              <div class="val hw-color">${z.elecHW?'개별':'N/A'||(r.hwPipe?r.hwPipe+'A':'N/A')}</div>
+              <div class="val hw-color">${z.elecHW?'개별':(r.hwPipe?r.hwPipe+'A':'N/A')}</div>
               <div class="sub">${z.elecHW?'온수기 사용':r.hwQ>0?r.hwQ.toFixed(1)+' L/min':'없음'}</div></div>
             <div class="result-card"><div class="lbl">오수관</div>
               <div class="val sew-color">${r.sewPipe?r.sewPipe+'A':'N/A'}</div>
