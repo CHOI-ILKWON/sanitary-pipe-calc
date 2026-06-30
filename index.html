@@ -133,11 +133,11 @@ td{padding:7px 10px;border-bottom:1px solid var(--border)}
 tr:last-child td{border-bottom:none}
 tr:hover td{background:rgba(255,255,255,.02)}
 .result-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:20px}
-.result-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;text-align:center}
-.result-card-title{font-size:12px;color:var(--text2);margin-bottom:10px}
-.result-pipe-big{font-size:38px;font-weight:700}
-.result-pipe-sub{font-size:13px;color:var(--text2);margin-top:4px}
-.result-pipe-pair{display:flex;gap:16px;justify-content:center}
+.result-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 16px;text-align:center}
+.result-card-title{font-size:11px;color:var(--text2);margin-bottom:4px}
+.result-pipe-big{font-size:24px;font-weight:700}
+.result-pipe-sub{font-size:11px;color:var(--text2);margin-top:2px}
+.result-pipe-pair{display:flex;gap:12px;justify-content:center}
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:200;display:flex;align-items:center;justify-content:center}
 .modal{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;width:320px}
 .modal-title{font-size:15px;font-weight:700;margin-bottom:14px}
@@ -1134,10 +1134,10 @@ function renderResult(){
       <div class="result-card-title">오배수 메인관</div>
       <div class="result-pipe-pair">
         <div><div style="font-size:11px;color:var(--text2);margin-bottom:4px">오수관</div>
-          <div class="result-pipe-big" style="font-size:30px;color:var(--red)">${ps(dm.sewPipe)}</div>
+          <div class="result-pipe-big" style="font-size:22px;color:var(--red)">${ps(dm.sewPipe)}</div>
           <div class="result-pipe-sub">${dm.sewDFU.toFixed(1)} DFU</div></div>
         <div><div style="font-size:11px;color:var(--text2);margin-bottom:4px">배수관</div>
-          <div class="result-pipe-big" style="font-size:30px;color:var(--drain)">${ps(dm.wstPipe)}</div>
+          <div class="result-pipe-big" style="font-size:22px;color:var(--drain)">${ps(dm.wstPipe)}</div>
           <div class="result-pipe-sub">${dm.wstDFU.toFixed(1)} DFU</div></div>
       </div>
     </div>
