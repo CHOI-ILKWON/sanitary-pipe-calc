@@ -1194,12 +1194,22 @@ function schematicSVG(type){
   const TOP_PAD=20;
   const MAIN_PAD=50;
 
-  // Ordered floor list
-  const floorOrder=[];
-  const seenFl=new Set();
-  for(const ri of risers){for(const fid of ri.floorIds){if(!seenFl.has(fid)){seenFl.add(fid);floorOrder.push(fid);}}}
-  for(const fl of floors){if(!seenFl.has(fl.id)){seenFl.add(fl.id);floorOrder.push(fl.id);}}
-  const numRows=floorOrder.length||1;
+  // Normalize floor name: "1층" = "1F" = "1" → same row
+  const _nfl=n=>n.trim().replace(/[층F]$/i,'').trim();
+  const floorNameToRow={}, floorRowArr=[];
+  for(const ri of risers){
+    for(const fid of ri.floorIds){
+      const fl=floors.find(f=>f.id===fid);
+      if(!fl) continue;
+      const k=_nfl(fl.name);
+      if(!(k in floorNameToRow)){floorNameToRow[k]=floorRowArr.length;floorRowArr.push(k);}
+    }
+  }
+  for(const fl of floors){
+    const k=_nfl(fl.name);
+    if(!(k in floorNameToRow)){floorNameToRow[k]=floorRowArr.length;floorRowArr.push(k);}
+  }
+  const numRows=floorRowArr.length||1;
 
   // Riser column widths & X positions
   const riserData=risers.map(ri=>{
@@ -1225,7 +1235,7 @@ function schematicSVG(type){
   const svgH=isTop?mainLineY+MAIN_PAD+20+numRows*ROW_H+30:mainLineY+FBH+30;
 
   const floorRowIdx={};
-  floorOrder.forEach((fid,i)=>{floorRowIdx[fid]=i;});
+  for(const fl of floors){floorRowIdx[fl.id]=floorNameToRow[_nfl(fl.name)]??0;}
 
   const lastRX=rX.length?rX[rX.length-1]:svgW-10;
   let buf='';
@@ -1313,22 +1323,26 @@ function schematicSVG(type){
       }
     }
 
-    // Direct zones (no floor)
+    // Direct zones (no floor) — exclude zones already shown in floor sections
     if(hasDirect){
-      const nd=ri.zoneIds.length;
-      buf+=`<line x1="${rx}" y1="${pseudoY}" x2="${rx+COL_PAD+nd*(ZW+ZG)}" y2="${pseudoY}" stroke="#9bacc8" stroke-width="1.5"/>`;
-      buf+=`<circle cx="${rx}" cy="${pseudoY}" r="5" fill="${rColor}" stroke="#ffffff" stroke-width="1.5"/>`;
-      let zx2=rx+COL_PAD;
-      for(let zi=0;zi<nd;zi++){
-        const zid=ri.zoneIds[zi];
-        const z=S.zones.find(z=>z.id===zid);
-        if(!z){zx2+=ZW+ZG;continue;}
-        const zrOwn=calcZone(z);
-        const isTermZone=(zi===nd-1);
-        const cumZs=ri.zoneIds.slice(zi).map(id=>S.zones.find(z=>z.id===id)).filter(Boolean);
-        const zrCum=isTermZone?null:sumZonesCum(cumZs);
-        buf+=schZoneBox(zx2,pseudoY-ZH/2,ZW,ZH,z.name,zrOwn,zrCum,isCW);
-        zx2+=ZW+ZG;
+      const shownInFloors=new Set(ri.floorIds.flatMap(fid=>{const fl=floors.find(f=>f.id===fid);return fl?fl.zoneIds:[];}));
+      const dZoneIds=ri.zoneIds.filter(zid=>!shownInFloors.has(zid));
+      if(dZoneIds.length){
+        const nd=dZoneIds.length;
+        buf+=`<line x1="${rx}" y1="${pseudoY}" x2="${rx+COL_PAD+nd*(ZW+ZG)}" y2="${pseudoY}" stroke="#9bacc8" stroke-width="1.5"/>`;
+        buf+=`<circle cx="${rx}" cy="${pseudoY}" r="5" fill="${rColor}" stroke="#ffffff" stroke-width="1.5"/>`;
+        let zx2=rx+COL_PAD;
+        for(let zi=0;zi<nd;zi++){
+          const zid=dZoneIds[zi];
+          const z=S.zones.find(z=>z.id===zid);
+          if(!z){zx2+=ZW+ZG;continue;}
+          const zrOwn=calcZone(z);
+          const isTermZone=(zi===nd-1);
+          const cumZs=dZoneIds.slice(zi).map(id=>S.zones.find(z=>z.id===id)).filter(Boolean);
+          const zrCum=isTermZone?null:sumZonesCum(cumZs);
+          buf+=schZoneBox(zx2,pseudoY-ZH/2,ZW,ZH,z.name,zrOwn,zrCum,isCW);
+          zx2+=ZW+ZG;
+        }
       }
     }
   }
