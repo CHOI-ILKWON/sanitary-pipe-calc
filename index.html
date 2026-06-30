@@ -1119,28 +1119,11 @@ function renderResult(){
     <span class="result-card-title" style="font-size:15px">메인관 결과</span>
     <span style="font-size:11px;color:var(--text2)">메인관 위치: <b style="color:var(--warn)">${locLabel}</b></span>
   </div>
-  <div class="result-grid">
-    <div class="result-card">
-      <div class="result-card-title">급수 메인관</div>
-      <div class="result-pipe-big" style="color:var(--accent)">${ps(cm.cwPipe)}</div>
-      <div class="result-pipe-sub">설계유량 ${cm.cwQ.toFixed(1)} L/min</div>
-    </div>
-    <div class="result-card">
-      <div class="result-card-title">급탕 메인관</div>
-      <div class="result-pipe-big" style="color:var(--hot)">${ps(cm.hwPipe)}</div>
-      <div class="result-pipe-sub">설계유량 ${cm.hwQ.toFixed(1)} L/min</div>
-    </div>
-    <div class="result-card">
-      <div class="result-card-title">오배수 메인관</div>
-      <div class="result-pipe-pair">
-        <div><div style="font-size:11px;color:var(--text2);margin-bottom:4px">오수관</div>
-          <div class="result-pipe-big" style="font-size:22px;color:var(--red)">${ps(dm.sewPipe)}</div>
-          <div class="result-pipe-sub">${dm.sewDFU.toFixed(1)} DFU</div></div>
-        <div><div style="font-size:11px;color:var(--text2);margin-bottom:4px">배수관</div>
-          <div class="result-pipe-big" style="font-size:22px;color:var(--drain)">${ps(dm.wstPipe)}</div>
-          <div class="result-pipe-sub">${dm.wstDFU.toFixed(1)} DFU</div></div>
-      </div>
-    </div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+    <div class="chip"><span class="chip-lbl">급수 MAIN관&nbsp;</span><span class="chip-val" style="color:var(--accent)">${ps(cm.cwPipe)}</span><span class="chip-lbl">&nbsp;${cm.cwQ.toFixed(1)} L/min</span></div>
+    <div class="chip"><span class="chip-lbl">급탕 MAIN관&nbsp;</span><span class="chip-val" style="color:var(--hot)">${ps(cm.hwPipe)}</span><span class="chip-lbl">&nbsp;${cm.hwQ.toFixed(1)} L/min</span></div>
+    <div class="chip"><span class="chip-lbl">오수 MAIN관&nbsp;</span><span class="chip-val" style="color:var(--red)">${ps(dm.sewPipe)}</span><span class="chip-lbl">&nbsp;${dm.sewDFU.toFixed(1)} DFU</span></div>
+    <div class="chip"><span class="chip-lbl">배수 MAIN관&nbsp;</span><span class="chip-val" style="color:var(--drain)">${ps(dm.wstPipe)}</span><span class="chip-lbl">&nbsp;${dm.wstDFU.toFixed(1)} DFU</span></div>
   </div>
   <div class="section"><div class="section-title">급수/급탕 계통도</div>${schematicSVG('cw')}</div>
   <div class="section"><div class="section-title">오배수 계통도</div>${schematicSVG('dr')}</div>
@@ -1445,6 +1428,7 @@ function delZone(id){
 function selZone(id){activeZone=id;renderSidebar();renderEditor();}
 function setZoneName(id,v){const z=findZone(id);if(z){z.name=v;renderSidebar();}}
 function setZoneFloor(id,v){const z=findZone(id);if(z){z.floor=v;renderSidebar();}}
+function setZoneElecHW(id,v){const z=findZone(id);if(z){z.elecHW=v;renderEditor();}}
 
 // ── Floor actions ──────────────────────────────────────────────────────────────
 function addFloor(type){
@@ -2080,13 +2064,13 @@ function printPDF(){
   // Remove outer div wrapper, strip explicit width/height to let CSS scale it
   const cwSvgScaled=cwSvgRaw
     .replace(/<div[^>]*>/g,'').replace(/<\/div>/g,'')
-    .replace(/(<svgs)[^>]*(>)/,(m,a,b)=>{
-      const vb=m.match(/viewBox="([^"]+)"/);
+    .replace(/(<svg)([^>]*)(>)/,(m,a,b,c)=>{
+      const vb=b.match(/viewBox="([^"]+)"/);
       const vbAttr=vb?`viewBox="${vb[1]}"`:(()=>{
-        const w=m.match(/width="(d+)"/),h=m.match(/height="(d+)"/);
+        const w=b.match(/width="(\d+)"/),h=b.match(/height="(\d+)"/);
         return w&&h?`viewBox="0 0 ${w[1]} ${h[1]}"`:'';
       })();
-      return `${a}xmlns="http://www.w3.org/2000/svg" ${vbAttr} preserveAspectRatio="xMidYMid meet"${b}`;
+      return `${a} xmlns="http://www.w3.org/2000/svg" ${vbAttr} preserveAspectRatio="xMidYMid meet"${c}`;
     }).trim();
 
   pages+=`<div class="page">
@@ -2105,13 +2089,13 @@ function printPDF(){
   const drSvgRaw=schematicSVG('dr');
   const drSvgScaled=drSvgRaw
     .replace(/<div[^>]*>/g,'').replace(/<\/div>/g,'')
-    .replace(/(<svgs)[^>]*(>)/,(m,a,b)=>{
-      const vb=m.match(/viewBox="([^"]+)"/);
+    .replace(/(<svg)([^>]*)(>)/,(m,a,b,c)=>{
+      const vb=b.match(/viewBox="([^"]+)"/);
       const vbAttr=vb?`viewBox="${vb[1]}"`:(()=>{
-        const w=m.match(/width="(d+)"/),h=m.match(/height="(d+)"/);
+        const w=b.match(/width="(\d+)"/),h=b.match(/height="(\d+)"/);
         return w&&h?`viewBox="0 0 ${w[1]} ${h[1]}"`:'';
       })();
-      return `${a}xmlns="http://www.w3.org/2000/svg" ${vbAttr} preserveAspectRatio="xMidYMid meet"${b}`;
+      return `${a} xmlns="http://www.w3.org/2000/svg" ${vbAttr} preserveAspectRatio="xMidYMid meet"${c}`;
     }).trim();
 
   pages+=`<div class="page">
