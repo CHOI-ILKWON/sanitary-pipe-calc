@@ -1917,16 +1917,16 @@ function zonePrintSVG(z){
       // Calc pipe for this single node qty
       const cwPipe=flowPipe(fx.cwQ*(n.qty||1));
       const hwPipe=fx.hot?flowPipe(fx.cwQ*(n.qty||1)):0;
-      const sewPipe=fx.drain==='sew'?Math.max(sewPipe(fx.dfu*(n.qty||1)),100):0;
-      const wstPipe=fx.drain==='wst'?Math.max(wstPipe(fx.dfu*(n.qty||1)),50):0;
+      const sewPipeD=fx.drain==='sew'?Math.max(sewPipe(fx.dfu*(n.qty||1)),100):0;
+      const wstPipeD=fx.drain==='wst'?Math.max(wstPipe(fx.dfu*(n.qty||1)),50):0;
       s+=`<text x="${x+NW/2}" y="${y+11}" text-anchor="middle" font-size="7.5" font-weight="700" fill="#1a2a6c">${fx.name}</text>`;
       s+=`<text x="${x+NW/2}" y="${y+21}" text-anchor="middle" font-size="7" fill="#444">${n.qty||1}개</text>`;
       // Pipe tags
       const tags=[];
       if(cwPipe) tags.push({c:'#1a56c4',t:'급수 '+cwPipe+'A'});
       if(hwPipe) tags.push({c:'#c41a1a',t:'급탕 '+hwPipe+'A'});
-      if(sewPipe) tags.push({c:'#b52b2b',t:'오수 '+sewPipe+'A'});
-      if(wstPipe) tags.push({c:'#6b3ac4',t:'배수 '+wstPipe+'A'});
+      if(sewPipeD) tags.push({c:'#b52b2b',t:'오수 '+sewPipeD+'A'});
+      if(wstPipeD) tags.push({c:'#6b3ac4',t:'배수 '+wstPipeD+'A'});
       const tw=NW/(tags.length||1);
       tags.forEach((tg,i)=>{
         s+=`<text x="${x+tw*i+tw/2}" y="${y+33}" text-anchor="middle" font-size="6.5" font-weight="600" fill="${tg.c}">${tg.t}</text>`;
