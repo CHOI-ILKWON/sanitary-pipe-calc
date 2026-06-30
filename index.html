@@ -1938,6 +1938,9 @@ function zonePrintSVG(z){
 }
 
 function printPDF(){
+  try{ _printPDF(); } catch(e){ alert('PDF 생성 오류: '+e.message+'\n\n'+e.stack); }
+}
+function _printPDF(){
   const proj=document.getElementById('projectName').value||'위생배관 관경 계산서';
   const today=new Date().toLocaleDateString('ko-KR',{year:'numeric',month:'2-digit',day:'2-digit'});
 
@@ -2110,6 +2113,7 @@ function printPDF(){
   </div>`;
 
   const win=window.open('','_blank','width=1200,height=900');
+  if(!win){ alert('팝업이 차단됐습니다.\n브라우저 주소창 오른쪽 팝업 차단 아이콘을 클릭해 허용 후 다시 시도하세요.'); return; }
   win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
     <title>${proj} — 위생배관 관경 계산서</title>
     <style>${css}</style></head>
