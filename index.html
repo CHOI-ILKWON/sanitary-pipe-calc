@@ -500,7 +500,7 @@ function calcMainType(type){
   let cwQ=0,hwQ=0,sD=0,wD=0;
   for(const rid of main.riserIds){const r=S[type].risers.find(r=>r.id===rid);if(r){const res=calcRiser(r,type);cwQ+=res.cwQ;hwQ+=res.hwQ;sD+=res.sewDFU;wD+=res.wstDFU;}}
   for(const fid of main.floorIds){const f=S[type].floors.find(f=>f.id===fid);if(f){const res=calcFloor(f,type);cwQ+=res.cwQ;hwQ+=res.hwQ;sD+=res.sewDFU;wD+=res.wstDFU;}}
-  for(const zid of main.zoneIds){const z=S.zones.find(z=>z.id===zid);if(z){const res=calcZone(z);cwQ+=res.cwQ;hwQ+=res.hwQ;sD+=res.sewDFU;wD+=res.wstDFU;}}
+  for(const zid of main.zoneIds){const z=S.zones.find(z=>z.id===zid);if(z){const res=calcZone(z);cwQ+=res.cwQ;if(!z.elecHW)hwQ+=res.hwQ;sD+=res.sewDFU;wD+=res.wstDFU;}}
   // include still-unassigned zones
   const aid=allAssignedZoneIds(type);
   for(const z of S.zones){if(!aid.has(z.id)){const r=calcZone(z);cwQ+=r.cwQ;if(!z.elecHW)hwQ+=r.hwQ;sD+=r.sewDFU;wD+=r.wstDFU;}}
@@ -540,7 +540,7 @@ const S={
   mainLocation:'bottom', // 'bottom'|'top'
   cw:{floors:[],risers:[],main:{riserIds:[],floorIds:[],zoneIds:[]}},
   dr:{floors:[],risers:[],main:{riserIds:[],floorIds:[],zoneIds:[]}},
-  pressure:{supplyKPa:250,floorH:3.0,material:'pvc',mainLen:10,branchLen:8,minResidualKPa:70}
+  pressure:{supplyKPa:250,floorH:3.0,material:'stainless',mainLen:10,branchLen:8,zoneLen:3,minResidualKPa:70}
 };
 let activeZone=null, activeTab=0;
 
@@ -562,10 +562,34 @@ function renderTab(i){
   if(i===4){renderPressureTab();}
   if(i===5){renderResult();}
 }
-function renderAll(){renderTab(activeTab);}
+function renderAll(){persist();renderTab(activeTab);}
+
+// ── Autosave (localStorage) ─────────────────────────────────────────────────────
+const LS_KEY='sanitaryPipeState_v1';
+function persist(){try{localStorage.setItem(LS_KEY,JSON.stringify(S));}catch{}}
+// 상태 보정: 구버전 마이그레이션 + 누락 키 기본값 (loadJSON·localStorage 복원 공용)
+function normalizeState(){
+  for(const t of['cw','dr']){
+    if(!S[t])S[t]={floors:[],risers:[],main:{riserIds:[],floorIds:[],zoneIds:[]}};
+    if(!S[t].floors)  S[t].floors  = S[t].groups || [];
+    if(!S[t].risers)  S[t].risers  = [];
+    if(!S[t].main)    S[t].main    = {riserIds:[],floorIds:[],zoneIds:[]};
+    delete S[t].groups; delete S[t].sgs;
+  }
+  if(!S.mainLocation) S.mainLocation='bottom';
+  if(!S.pressure) S.pressure={supplyKPa:250,floorH:3.0,material:'stainless',mainLen:10,branchLen:8,zoneLen:3,minResidualKPa:70};
+  if(S.pressure.zoneLen==null) S.pressure.zoneLen=3;
+  if(!S.pressure.material) S.pressure.material='stainless';
+  let mx=0;
+  const scanId=o=>{if(o&&o.id){const n=parseInt(o.id.slice(1));if(!isNaN(n)&&n>mx)mx=n;}};
+  S.zones.forEach(z=>{scanId(z);if(z.pipe)Object.values(z.pipe.nodes).forEach(scanId);});
+  [...S.cw.floors,...S.dr.floors,...S.cw.risers,...S.dr.risers].forEach(scanId);
+  _id=mx+1;
+}
 
 // ── Sidebar ────────────────────────────────────────────────────────────────────
 function renderSidebar(){
+  persist();
   const el=document.getElementById('zoneSidebar');
   let h=`<div class="sidebar-hdr"><span class="sidebar-title">Zone 목록</span>
     <button class="btn btn-primary btn-sm" onclick="addZone()">+ 추가</button></div>`;
@@ -845,6 +869,7 @@ function renderPipeCanvas(zone){
 }
 
 function renderEditor(){
+  persist();
   const el=document.getElementById('zoneEditor');
   if(!S.zones.length){
     el.innerHTML=`<div class="empty" style="padding:40px 20px">좌측에서 Zone을 추가하고 선택하세요.</div>`;
@@ -1523,7 +1548,7 @@ function delFloor(type,id){
   S[type].main.floorIds=S[type].main.floorIds.filter(i=>i!==id);
   renderTab(activeTab);
 }
-function setFloorName(type,id,v){const f=S[type].floors.find(f=>f.id===id);if(f)f.name=v;}
+function setFloorName(type,id,v){const f=S[type].floors.find(f=>f.id===id);if(f){f.name=v;persist();}}
 function toggleFloorZone(type,fid,zid,chk){
   const f=S[type].floors.find(f=>f.id===fid);if(!f)return;
   if(chk&&!f.zoneIds.includes(zid))f.zoneIds.push(zid);
@@ -1543,7 +1568,7 @@ function delRiser(type,id){
   S[type].main.riserIds=S[type].main.riserIds.filter(i=>i!==id);
   renderTab(activeTab);
 }
-function setRiserName(type,id,v){const r=S[type].risers.find(r=>r.id===id);if(r)r.name=v;}
+function setRiserName(type,id,v){const r=S[type].risers.find(r=>r.id===id);if(r){r.name=v;persist();}}
 function toggleRiserFloor(type,rid,fid,chk){
   const r=S[type].risers.find(r=>r.id===rid);if(!r)return;
   if(chk&&!r.floorIds.includes(fid))r.floorIds.push(fid);
@@ -1574,7 +1599,9 @@ function resetAll(){
   S.mainLocation='bottom';
   S.cw={floors:[],risers:[],main:{riserIds:[],floorIds:[],zoneIds:[]}};
   S.dr={floors:[],risers:[],main:{riserIds:[],floorIds:[],zoneIds:[]}};
+  S.pressure={supplyKPa:250,floorH:3.0,material:'stainless',mainLen:10,branchLen:8,zoneLen:3,minResidualKPa:70};
   _id=1; activeZone=null;
+  try{localStorage.removeItem(LS_KEY);}catch{}
   document.getElementById('projectName').value='새 프로젝트';
   renderAll();
 }
@@ -1591,26 +1618,7 @@ function loadJSON(e){
     try{
       const d=JSON.parse(ev.target.result);
       Object.assign(S,d);
-      // 구 버전(groups/sgs) → 새 버전(floors/risers/main) 마이그레이션
-      for(const t of['cw','dr']){
-        if(!S[t].floors)  S[t].floors  = S[t].groups || [];
-        if(!S[t].risers)  S[t].risers  = [];
-        if(!S[t].main)    S[t].main    = {riserIds:[],floorIds:[],zoneIds:[]};
-        // 구버전 키 제거
-        delete S[t].groups; delete S[t].sgs;
-      }
-      if(!S.mainLocation) S.mainLocation='bottom';
-      let mx=0;
-      function scanId(o){
-        if(!o) return;
-        if(o.id){const n=parseInt(o.id.slice(1));if(!isNaN(n)&&n>mx)mx=n;}
-      }
-      S.zones.forEach(z=>{
-        scanId(z);
-        if(z.pipe) Object.values(z.pipe.nodes).forEach(scanId);
-      });
-      [...S.cw.floors,...S.dr.floors,...S.cw.risers,...S.dr.risers].forEach(scanId);
-      _id=mx+1;
+      normalizeState();
       document.getElementById('projectName').value=S.projectName||'';
       activeZone=S.zones[0]?.id||null;
       renderAll();
@@ -1640,7 +1648,19 @@ function confirmModal(){const v=document.getElementById('minp')?.value||'';const
 function closeModal(){document.getElementById('modalOverlay').style.display='none';window._mcb=null;}
 
 // ── Init ───────────────────────────────────────────────────────────────────────
-document.getElementById('projectName').addEventListener('change',function(){S.projectName=this.value;});
+document.getElementById('projectName').addEventListener('change',function(){S.projectName=this.value;persist();});
+try{
+  const saved=localStorage.getItem(LS_KEY);
+  if(saved){
+    const d=JSON.parse(saved);
+    if(d&&d.zones){
+      Object.assign(S,d);
+      normalizeState();
+      activeZone=S.zones[0]?.id||null;
+    }
+  }
+}catch{}
+document.getElementById('projectName').value=S.projectName||'';
 renderAll();
 
 // ── Pressure loss (Hazen-Williams) ────────────────────────────────────────────
@@ -1657,7 +1677,7 @@ function pipeNextSize(d){const i=PIPE_SIZES_ALL.indexOf(d);return(i>=0&&i<PIPE_S
 
 function calcAllPressurePaths(type){
   const P=S.pressure,isCW=type==='cw',isTop=S.mainLocation==='top';
-  const mat=P.material,floorH=P.floorH,mainLen=P.mainLen,branchLen=P.branchLen;
+  const mat=P.material,floorH=P.floorH,mainLen=P.mainLen,branchLen=P.branchLen,zoneLen=P.zoneLen||3;
   const risers=S[type].risers,floors=S[type].floors;
   const mainR=calcMainType(type);
   const mainQ=isCW?mainR.cwQ:mainR.hwQ;
@@ -1690,7 +1710,7 @@ function calcAllPressurePaths(type){
         const zQ=isCW?zr.cwQ:zr.hwQ;
         const zD=isCW?zr.cwPipe:zr.hwPipe;
         if(!zQ||!zD)continue;
-        const zoneFriction=frictionLossKPa(zQ,zD,3,mat);
+        const zoneFriction=frictionLossKPa(zQ,zD,zoneLen,mat);
         const totalLoss=mainFriction+riserFriction+branchFriction+zoneFriction+elevLoss;
         paths.push({
           label:`${ri.name} → ${fl.name} → ${z.name}`,
@@ -1698,7 +1718,7 @@ function calcAllPressurePaths(type){
             {name:'MAIN관',Q:mainQ,D:mainD,L:mainLen,friction:mainFriction,elev:0},
             {name:ri.name+' 수직',Q:riserQ,D:riserD,L:elevM,friction:riserFriction,elev:elevLoss},
             {name:fl.name+' 분기',Q:flQ,D:flD,L:branchLen,friction:branchFriction,elev:0},
-            {name:z.name,Q:zQ,D:zD,L:3,friction:zoneFriction,elev:0}
+            {name:z.name,Q:zQ,D:zD,L:zoneLen,friction:zoneFriction,elev:0}
           ],
           totalLoss,residual:P.supplyKPa-totalLoss,ok:(P.supplyKPa-totalLoss)>=P.minResidualKPa
         });
@@ -1715,18 +1735,65 @@ function calcAllPressurePaths(type){
       const elevM=floorH;
       const elevLoss=isTop?-elevLossKPa(elevM):elevLossKPa(elevM);
       const riserFriction=frictionLossKPa(riserQ,riserD,elevM,mat);
-      const zoneFriction=frictionLossKPa(zQ,zD,3,mat);
+      const zoneFriction=frictionLossKPa(zQ,zD,zoneLen,mat);
       const totalLoss=mainFriction+riserFriction+zoneFriction+elevLoss;
       paths.push({
         label:`${ri.name} → ${z.name}`,
         segments:[
           {name:'MAIN관',Q:mainQ,D:mainD,L:mainLen,friction:mainFriction,elev:0},
           {name:ri.name+' 수직',Q:riserQ,D:riserD,L:elevM,friction:riserFriction,elev:elevLoss},
-          {name:z.name,Q:zQ,D:zD,L:3,friction:zoneFriction,elev:0}
+          {name:z.name,Q:zQ,D:zD,L:zoneLen,friction:zoneFriction,elev:0}
         ],
         totalLoss,residual:P.supplyKPa-totalLoss,ok:(P.supplyKPa-totalLoss)>=P.minResidualKPa
       });
     }
+  }
+  // 메인 직결 층 (입상관 없이 메인에서 바로 분기)
+  for(const fid of S[type].main.floorIds){
+    const fl=floors.find(f=>f.id===fid);if(!fl)continue;
+    const flR=calcFloor(fl,type);
+    const flQ=isCW?flR.cwQ:flR.hwQ;
+    const flD=isCW?flR.cwPipe:flR.hwPipe;
+    if(!flQ||!flD)continue;
+    const elevM=floorH;
+    const elevLoss=isTop?-elevLossKPa(elevM):elevLossKPa(elevM);
+    const branchFriction=frictionLossKPa(flQ,flD,branchLen,mat);
+    for(const zid of fl.zoneIds){
+      const z=S.zones.find(z=>z.id===zid);if(!z)continue;
+      const zr=calcZone(z);
+      const zQ=isCW?zr.cwQ:zr.hwQ, zD=isCW?zr.cwPipe:zr.hwPipe;
+      if(!zQ||!zD)continue;
+      const zoneFriction=frictionLossKPa(zQ,zD,zoneLen,mat);
+      const totalLoss=mainFriction+branchFriction+zoneFriction+elevLoss;
+      paths.push({
+        label:`MAIN → ${fl.name} → ${z.name}`,
+        segments:[
+          {name:'MAIN관',Q:mainQ,D:mainD,L:mainLen,friction:mainFriction,elev:elevLoss},
+          {name:fl.name+' 분기',Q:flQ,D:flD,L:branchLen,friction:branchFriction,elev:0},
+          {name:z.name,Q:zQ,D:zD,L:zoneLen,friction:zoneFriction,elev:0}
+        ],
+        totalLoss,residual:P.supplyKPa-totalLoss,ok:(P.supplyKPa-totalLoss)>=P.minResidualKPa
+      });
+    }
+  }
+  // 메인 직결 존
+  for(const zid of S[type].main.zoneIds){
+    const z=S.zones.find(z=>z.id===zid);if(!z)continue;
+    const zr=calcZone(z);
+    const zQ=isCW?zr.cwQ:zr.hwQ, zD=isCW?zr.cwPipe:zr.hwPipe;
+    if(!zQ||!zD)continue;
+    const elevM=floorH;
+    const elevLoss=isTop?-elevLossKPa(elevM):elevLossKPa(elevM);
+    const zoneFriction=frictionLossKPa(zQ,zD,zoneLen,mat);
+    const totalLoss=mainFriction+zoneFriction+elevLoss;
+    paths.push({
+      label:`MAIN → ${z.name}`,
+      segments:[
+        {name:'MAIN관',Q:mainQ,D:mainD,L:mainLen,friction:mainFriction,elev:elevLoss},
+        {name:z.name,Q:zQ,D:zD,L:zoneLen,friction:zoneFriction,elev:0}
+      ],
+      totalLoss,residual:P.supplyKPa-totalLoss,ok:(P.supplyKPa-totalLoss)>=P.minResidualKPa
+    });
   }
   paths.sort((a,b)=>a.residual-b.residual);
   return paths;
@@ -1842,6 +1909,8 @@ function renderPressureTab(){
       ${inp('mainLen',P.mainLen,1,500,1)}</div>
     <div style="margin-bottom:10px"><div style="font-size:10.5px;color:var(--text2);margin-bottom:3px">층당 수평배관 길이 (m)</div>
       ${inp('branchLen',P.branchLen,1,100,1)}</div>
+    <div style="margin-bottom:10px"><div style="font-size:10.5px;color:var(--text2);margin-bottom:3px">존 분기관 길이 (m)</div>
+      ${inp('zoneLen',P.zoneLen??3,0.5,50,0.5,'층 분기에서 화장실 말단 기구까지')}</div>
     <div style="margin-bottom:6px"><div style="font-size:10.5px;color:var(--text2);margin-bottom:3px">최소 잔압 기준 (kPa)</div>
       ${inp('minResidualKPa',P.minResidualKPa,30,200,5,'건물 내 기구 중 가장 높은 값 적용')}</div>
     <details style="margin-bottom:10px">
@@ -1886,7 +1955,7 @@ function renderPressureTab(){
   const hwPathsReal=[];
   if(S.cw.risers.length){
     const P=S.pressure,isTop=S.mainLocation==='top';
-    const mat=P.material;
+    const mat=P.material,zoneLen=P.zoneLen||3;
     const mainR=calcMainType('cw');
     const mainQ=mainR.hwQ,mainD=mainR.hwPipe;
     const mainFriction=frictionLossKPa(mainQ,mainD,P.mainLen,mat);
@@ -1909,7 +1978,7 @@ function renderPressureTab(){
           const zr=calcZone(z);
           const zQ=zr.hwQ,zD=zr.hwPipe;
           if(!zQ||!zD)continue;
-          const zoneFriction=frictionLossKPa(zQ,zD,3,mat);
+          const zoneFriction=frictionLossKPa(zQ,zD,zoneLen,mat);
           const totalLoss=mainFriction+riserFriction+branchFriction+zoneFriction+elevLoss;
           hwPathsReal.push({
             label:`${ri.name} → ${fl.name} → ${z.name}`,
@@ -1917,7 +1986,7 @@ function renderPressureTab(){
               {name:'MAIN관(급탕)',Q:mainQ,D:mainD,L:P.mainLen,friction:mainFriction,elev:0},
               {name:ri.name+' 수직',Q:riserQ,D:riserD,L:elevM,friction:riserFriction,elev:elevLoss},
               {name:fl.name+' 분기',Q:flQ,D:flD,L:P.branchLen,friction:branchFriction,elev:0},
-              {name:z.name,Q:zQ,D:zD,L:3,friction:zoneFriction,elev:0}
+              {name:z.name,Q:zQ,D:zD,L:zoneLen,friction:zoneFriction,elev:0}
             ],
             totalLoss,residual:P.supplyKPa-totalLoss,ok:(P.supplyKPa-totalLoss)>=P.minResidualKPa
           });
@@ -2201,77 +2270,6 @@ function _printPDF(){
   win.document.close();
   win.focus();
   setTimeout(()=>win.print(),700);
-}
-
-// ── Save / Load ────────────────────────────────────────────────────────────────
-function resetAll(){
-  if(!confirm('현재 작업을 초기화할까요? 저장하지 않은 내용은 사라집니다.')) return;
-  S.projectName='새 프로젝트';
-  S.zones=[];
-  S.mainLocation='bottom';
-  S.cw={floors:[],risers:[],main:{riserIds:[],floorIds:[],zoneIds:[]}};
-  S.dr={floors:[],risers:[],main:{riserIds:[],floorIds:[],zoneIds:[]}};
-  _id=1; activeZone=null;
-  document.getElementById('projectName').value='새 프로젝트';
-  renderAll();
-}
-function saveJSON(){
-  S.projectName=document.getElementById('projectName').value||S.projectName;
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(new Blob([JSON.stringify(S,null,2)],{type:'application/json'}));
-  a.download=(S.projectName||'프로젝트')+'.json'; a.click();
-}
-function loadJSON(e){
-  const f=e.target.files[0];if(!f)return;
-  const r=new FileReader();
-  r.onload=ev=>{
-    try{
-      const d=JSON.parse(ev.target.result);
-      Object.assign(S,d);
-      // 구 버전(groups/sgs) → 새 버전(floors/risers/main) 마이그레이션
-      for(const t of['cw','dr']){
-        if(!S[t].floors)  S[t].floors  = S[t].groups || [];
-        if(!S[t].risers)  S[t].risers  = [];
-        if(!S[t].main)    S[t].main    = {riserIds:[],floorIds:[],zoneIds:[]};
-        // 구버전 키 제거
-        delete S[t].groups; delete S[t].sgs;
-      }
-      if(!S.mainLocation) S.mainLocation='bottom';
-      let mx=0;
-      function scanId(o){
-        if(!o) return;
-        if(o.id){const n=parseInt(o.id.slice(1));if(!isNaN(n)&&n>mx)mx=n;}
-      }
-      S.zones.forEach(z=>{
-        scanId(z);
-        if(z.pipe) Object.values(z.pipe.nodes).forEach(scanId);
-      });
-      [...S.cw.floors,...S.dr.floors,...S.cw.risers,...S.dr.risers].forEach(scanId);
-      _id=mx+1;
-      document.getElementById('projectName').value=S.projectName||'';
-      activeZone=S.zones[0]?.id||null;
-      renderAll();
-    }catch(ex){console.error(ex);alert('JSON 파일을 불러오는데 실패했습니다.\n'+ex.message);}
-  };
-  r.readAsText(f); e.target.value='';
-}
-
-// ── Modal ──────────────────────────────────────────────────────────────────────
-function showModal(ph,title,cb){
-  const ov=document.getElementById('modalOverlay');
-  ov.style.display='flex';
-  ov.innerHTML=`<div class="modal">
-    <div class="modal-title">${esc(title)}</div>
-    <input class="modal-inp" id="minp" type="text" placeholder="${esc(ph)}">
-    <div class="modal-btns">
-      <button class="btn btn-ghost" onclick="closeModal()">취소</button>
-      <button class="btn btn-primary" onclick="confirmModal()">확인</button>
-    </div></div>`;
-  window._mcb=cb;
-  setTimeout(()=>{
-    const el=document.getElementById('minp');
-    if(el){el.focus();el.addEventListener('keydown',e=>{if(e.key==='Enter')confirmModal();if(e.key==='Escape')closeModal();});}
-  },30);
 }
 </script>
 
