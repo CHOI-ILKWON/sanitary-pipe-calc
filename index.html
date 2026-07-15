@@ -1320,6 +1320,17 @@ function renderResult(){
     급탕 ${((cm.hwSimultF||0.85)*100).toFixed(0)}%${cm.hwCnt!=null?` (온수기구 ${cm.hwCnt}개)`:''} 적용 ·
     통기관경은 DFU 개략 + 담당 배수관경의 1/2 이상 기준 (최소 32A)
   </div>
+  ${(()=>{
+    const totFx=Object.fromEntries(FX_KEYS.map(k=>[k,0]));
+    for(const z of S.zones){const t=zoneFxTotals(z);for(const k of FX_KEYS)totFx[k]+=t[k]||0;}
+    const fxTotal=Object.values(totFx).reduce((a,b)=>a+b,0);
+    if(!fxTotal)return '';
+    return `<div class="section" style="margin-bottom:12px"><div class="section-title">기구 총계 — 전체 화장실 ${S.zones.length}개소</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${FX_KEYS.filter(k=>totFx[k]).map(k=>`<div class="chip"><span class="chip-lbl">${FX[k].name}&nbsp;</span><span class="chip-val">${totFx[k]}</span><span class="chip-lbl">개</span></div>`).join('')}
+        <div class="chip"><span class="chip-lbl">합계&nbsp;</span><span class="chip-val" style="color:var(--accent)">${fxTotal}</span><span class="chip-lbl">개</span></div>
+      </div></div>`;
+  })()}
   <div class="section"><div class="section-title">급수/급탕 계통도</div>${schematicSVG('cw')}</div>
   <div class="section"><div class="section-title">오배수 계통도</div>${schematicSVG('dr')}</div>
   </div>`;
@@ -1358,28 +1369,54 @@ function zoneValves(z){
   return items;
 }
 
-// 부속류 개략 산출 (급수 기준) — 길이 없이 배관 그림의 위상(연결 구조)만으로 셈
+// 구경별 수량 맵 유틸
+function bumpDia(m,d,n=1){ if(!d||d==='N/A'||!n)return; m[d]=(m[d]||0)+n; }
+function fmtDia(m){
+  const e=Object.entries(m); if(!e.length)return '—';
+  return e.sort((a,b)=>parseInt(b[0])-parseInt(a[0])).map(([d,q])=>`${d}×${q}`).join(' · ');
+}
+function sumDia(m){return Object.values(m).reduce((a,b)=>a+b,0);}
+function mergeDia(dst,src){for(const k in src)dst[k]=(dst[k]||0)+src[k];}
+
+// 부속류 개략 산출 (급수) — 길이 없이 배관 그림의 위상만으로, 구경별 집계
 function zoneFittings(z){
+  const res={tee:{},elbow:{},reducer:{},fixtures:0};
   const nodes=z.pipe.nodes;
-  let tee=0, elbow=2, fixtures=0; // 존 인입 입상·벽체 엘보 2개 기본
-  for(const id in nodes){
-    const n=nodes[id];
-    if(n.branchNext) tee++;              // 분기(T) 지점 — 그림에서 자동
-    if(n.type!=='fixture') continue;
-    const q=n.qty||1; fixtures+=q;
-    if(n.mainNext) tee+=q;               // 중간 기구: 주관에서 기구마다 티 분기
-    else { tee+=Math.max(0,q-1); elbow++; } // 말단 기구: 마지막 1개는 엘보로 종단
-  }
-  elbow+=fixtures;                       // 기구 하강(벽체) 엘보 — 기구당 1개 개략
-  // 레듀서: 급수 관경 축소 지점 — 계산 트리에서 자동
-  let reducer=0;
+  const tree=calcZone(z);
+  bumpDia(res.elbow,ps(tree.cwPipe),2); // 존 인입 입상·벽체 엘보 2 — 존 급수관경
   (function walk(c){
-    for(const k of (c.kids||[])){
-      if(c.cwPipe&&k.cwPipe&&k.cwPipe<c.cwPipe) reducer++;
+    const raw=c.node&&c.node.id?nodes[c.node.id]:null;
+    const D=ps(c.cwPipe); // 이 지점 주관 구경 (누적 관경)
+    if(raw){
+      if(raw.branchNext) bumpDia(res.tee,D,1);          // 분기(T) 지점
+      if(raw.type==='fixture'&&FX[raw.fxKey]&&FX[raw.fxKey].cwQ>0){
+        const q=raw.qty||1; res.fixtures+=q;
+        const connD=ps(FX[raw.fxKey].conn||15);
+        if(raw.mainNext) bumpDia(res.tee,D,q);          // 중간 기구: 기구마다 주관 구경 티
+        else { bumpDia(res.tee,D,Math.max(0,q-1)); bumpDia(res.elbow,connD,1); } // 말단
+        bumpDia(res.elbow,connD,q);                     // 기구 하강 — 연결관경
+      }
+    }
+    for(const k of c.kids){
+      if(c.cwPipe&&k.cwPipe&&k.cwPipe<c.cwPipe) bumpDia(res.reducer,`${c.cwPipe}×${k.cwPipe}A`,1);
       walk(k);
     }
-  })(calcZone(z));
-  return {tee,elbow,reducer,fixtures};
+  })(tree);
+  return res;
+}
+
+// 배수 부속 개략 (오수·잡배수) — 기구 접속 TY + 청소구(C.O)
+function zoneDrainFittings(z){
+  const t=zoneFxTotals(z), zr=calcZone(z);
+  const res={ty:{},co:{}};
+  for(const k of FX_KEYS){
+    const n=t[k]||0; if(!n)continue;
+    bumpDia(res.ty,ps(FX[k].dc||50),n);   // 기구 배수관경 기준 접속 부속
+  }
+  // 수평지관 말단 청소구 — 관경과 동일 구경(최대 100A), 오수·잡배수 각 1
+  if(zr.sewDFU>0) bumpDia(res.co,ps(Math.min(zr.sewPipe,100)),1);
+  if(zr.wstDFU>0) bumpDia(res.co,ps(Math.min(zr.wstPipe,100)),1);
+  return res;
 }
 
 function renderValveTab(){
@@ -1400,17 +1437,28 @@ function renderValveTab(){
     h+=`</div>`;
     el.innerHTML=h; return;
   }
-  // 집계 칩 (밸브 + 부속)
+  // 집계 카드 — 밸브·부속 모두 수량 아래 구경×개수 표기
   const totals={};
-  for(const z of S.zones) for(const it of zoneValves(z)) totals[it.name]=(totals[it.name]||0)+it.qty;
-  let tTee=0,tElbow=0,tRed=0;
-  for(const z of S.zones){const f=zoneFittings(z);tTee+=f.tee;tElbow+=f.elbow;tRed+=f.reducer;}
+  for(const z of S.zones) for(const it of zoneValves(z)){
+    const m=totals[it.name]=totals[it.name]||{}; m[it.pipe]=(m[it.pipe]||0)+it.qty;
+  }
+  const fTee={},fElb={},fRed={},dTY={},dCO={};
+  for(const z of S.zones){
+    const f=zoneFittings(z); mergeDia(fTee,f.tee); mergeDia(fElb,f.elbow); mergeDia(fRed,f.reducer);
+    const d=zoneDrainFittings(z); mergeDia(dTY,d.ty); mergeDia(dCO,d.co);
+  }
+  const card=(name,m,color)=>`<div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;min-width:118px">
+    <div style="font-size:10.5px;color:var(--text2)">${name}</div>
+    <div style="font-size:18px;font-weight:700;color:${color}">${sumDia(m)}<span style="font-size:10px;color:var(--text2);font-weight:400"> 개</span></div>
+    <div style="font-size:10px;color:${color};margin-top:2px;border-top:1px solid var(--border);padding-top:3px">${fmtDia(m)}</div>
+  </div>`;
   h+=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">`;
-  for(const [n,q] of Object.entries(totals))
-    h+=`<div class="chip"><span class="chip-lbl">${n}&nbsp;</span><span class="chip-val">${q}</span><span class="chip-lbl">개</span></div>`;
-  h+=`<div class="chip"><span class="chip-lbl">티(급수)&nbsp;</span><span class="chip-val" style="color:var(--accent2)">${tTee}</span><span class="chip-lbl">개</span></div>
-    <div class="chip"><span class="chip-lbl">엘보(급수)&nbsp;</span><span class="chip-val" style="color:var(--accent2)">${tElbow}</span><span class="chip-lbl">개</span></div>
-    <div class="chip"><span class="chip-lbl">레듀서(급수)&nbsp;</span><span class="chip-val" style="color:var(--accent2)">${tRed}</span><span class="chip-lbl">개</span></div>`;
+  for(const [n,m] of Object.entries(totals)) h+=card(n,m,'var(--accent)');
+  h+=card('티 (급수)',fTee,'var(--accent2)');
+  h+=card('엘보 (급수)',fElb,'var(--accent2)');
+  if(Object.keys(fRed).length) h+=card('레듀서 (급수)',fRed,'var(--accent2)');
+  if(Object.keys(dTY).length) h+=card('기구접속 TY (배수)',dTY,'var(--drain)');
+  if(Object.keys(dCO).length) h+=card('청소구 C.O (배수)',dCO,'var(--drain)');
   h+=`</div>`;
   // 존별 상세
   for(const z of S.zones){
@@ -1435,22 +1483,30 @@ function renderValveTab(){
       </tr>`;
     }
     h+=`</table>`;
-    const ft=zoneFittings(z);
-    h+=`<div style="font-size:11px;margin-top:8px;padding-top:8px;border-top:1px dashed var(--border)">
-      <span style="color:var(--text2)">부속류(급수, 개략):</span>
-      <b style="color:var(--accent2)">티 ${ft.tee}</b> ·
-      <b style="color:var(--accent2)">엘보 ${ft.elbow}</b> ·
-      <b style="color:var(--accent2)">레듀서 ${ft.reducer}</b>
-      <div style="font-size:10px;color:var(--text3);margin-top:3px">티 = 배관 그림의 분기·기구 접속 수(자동) / 엘보 = 말단 종단 + 기구 하강(기구당 1) + 존 인입 2 개략 / 레듀서 = 관경 축소 지점(자동)</div>
+    const ft=zoneFittings(z), df=zoneDrainFittings(z);
+    h+=`<div style="font-size:11px;margin-top:8px;padding-top:8px;border-top:1px dashed var(--border);line-height:1.9">
+      <span style="color:var(--text2)">급수 부속(개략):</span>
+      티 <b style="color:var(--accent2)">${fmtDia(ft.tee)}</b> ·
+      엘보 <b style="color:var(--accent2)">${fmtDia(ft.elbow)}</b>${Object.keys(ft.reducer).length?` · 레듀서 <b style="color:var(--accent2)">${fmtDia(ft.reducer)}</b>`:''}<br>
+      <span style="color:var(--text2)">배수 부속(개략):</span>
+      기구접속 TY <b style="color:var(--drain)">${fmtDia(df.ty)}</b> ·
+      청소구 C.O <b style="color:var(--drain)">${fmtDia(df.co)}</b>
+      <div style="font-size:10px;color:var(--text3);margin-top:3px">티=분기·기구 접속(자동, 해당 지점 주관 구경) / 엘보=말단+기구 하강(연결관경)+존 인입 2 / 레듀서=관경 축소 지점(자동) / TY=기구 배수 접속(기구 배수관경) / C.O=수평지관당 오수·잡배수 각 1(관경 동일, 최대 100A)</div>
     </div></div>`;
   }
 
-  // 계통 분기 부속 (급수, 개략) — 층·입상관의 분기 티는 존·층 수에서 자동
+  // 계통 분기 부속 (개략) — 층·입상관의 분기 티는 존·층 수에서 자동, 구경 표기
   const sysRows=[];
-  for(const f of S.cw.floors){const n=f.zoneIds.length;if(n)sysRows.push([f.name+' (층 주관)',`티 ${n}개`,'존 분기마다 티 1']);}
-  for(const r of S.cw.risers){const n=r.floorIds.length+r.zoneIds.length;if(n)sysRows.push([r.name+' (입상관)',`티 ${n}개 + 엘보 2개`,'층·직결 분기마다 티 1, 최상·최하부 엘보']);}
+  for(const f of S.cw.floors){const n=f.zoneIds.length;if(n){const fr=calcFloor(f,'cw');sysRows.push([f.name+' (급수 층 주관)',`티 ${ps(fr.cwPipe)}×${n}`,'존 분기마다 티 1']);}}
+  for(const r of S.cw.risers){const n=r.floorIds.length+r.zoneIds.length;if(n){const rr=calcRiser(r,'cw');sysRows.push([r.name+' (급수 입상관)',`티 ${ps(rr.cwPipe)}×${n} · 엘보 ${ps(rr.cwPipe)}×2`,'층·직결 분기 티 + 최상·최하부 엘보']);}}
+  for(const r of S.dr.risers){
+    const rr=calcRiser(r,'dr'); const parts=[];
+    if(rr.sewDFU>0)parts.push(`오수 C.O ${ps(Math.min(rr.sewPipe,100))}×1`);
+    if(rr.wstDFU>0)parts.push(`잡배수 C.O ${ps(Math.min(rr.wstPipe,100))}×1`);
+    if(parts.length)sysRows.push([r.name+' (배수 입상관)',parts.join(' · '),'입상관 최하부 청소구']);
+  }
   if(sysRows.length){
-    h+=`<div class="section"><div class="section-title">계통 분기 부속 (급수, 개략)</div>
+    h+=`<div class="section"><div class="section-title">계통 분기 부속 (개략)</div>
       <table style="width:100%;border-collapse:collapse;font-size:11.5px">`;
     for(const [a,b,c] of sysRows)
       h+=`<tr><td style="padding:4px 6px;border-bottom:1px solid var(--border);font-weight:600">${esc(a)}</td>
@@ -1656,26 +1712,52 @@ function exportCSV(){
   rows.push(['관경',ps(cm.cwPipe),ps(cm.hwPipe),ps(dm.sewPipe),ps(dm.sewVent||0),ps(dm.wstPipe),ps(dm.wstVent||0)]);
   rows.push(['유량/부하',cm.cwQ.toFixed(1)+' L/min',cm.hwQ.toFixed(1)+' L/min',
     dm.sewDFU.toFixed(1)+' DFU','',dm.wstDFU.toFixed(1)+' DFU','']);
+  // 기구 총계
+  const totFx=Object.fromEntries(FX_KEYS.map(k=>[k,0]));
+  for(const z of S.zones){const t=zoneFxTotals(z);for(const k of FX_KEYS)totFx[k]+=t[k]||0;}
+  rows.push([]);
+  rows.push(['[기구 총계]','기구','수량']);
+  for(const k of FX_KEYS) if(totFx[k]) rows.push(['',FX[k].name,totFx[k]]);
+  rows.push(['','합계',Object.values(totFx).reduce((a,b)=>a+b,0)]);
   rows.push([]);
   rows.push(['[밸브 산출 — 화장실 말단]','품명','용도','구경','수량','비고']);
   for(const z of S.zones) for(const it of zoneValves(z))
     rows.push([z.name,it.name,it.spec,it.pipe,it.qty,it.note]);
   const totals={};
-  for(const z of S.zones) for(const it of zoneValves(z)) totals[it.name]=(totals[it.name]||0)+it.qty;
-  rows.push([]);
-  rows.push(['[밸브 집계]','품명','수량 합계']);
-  for(const [n,q] of Object.entries(totals)) rows.push(['',n,q]);
-  // 부속류 (급수, 개략 — 길이·보온 미포함: 도면 실측 영역)
-  rows.push([]);
-  rows.push(['[부속류 산출 — 급수, 개략]','티','엘보','레듀서','비고']);
-  let ftT=0,ftE=0,ftR=0;
-  for(const z of S.zones){
-    const f=zoneFittings(z); ftT+=f.tee; ftE+=f.elbow; ftR+=f.reducer;
-    rows.push([z.name,f.tee,f.elbow,f.reducer,'배관 그림 위상 기반 자동 (엘보: 말단+기구하강+인입2 개략)']);
+  for(const z of S.zones) for(const it of zoneValves(z)){
+    const m=totals[it.name]=totals[it.name]||{}; m[it.pipe]=(m[it.pipe]||0)+it.qty;
   }
-  for(const f of S.cw.floors){const n=f.zoneIds.length;if(n){ftT+=n;rows.push([f.name+' (층 주관)',n,'','','존 분기마다 티 1 자동']);}}
-  for(const r of S.cw.risers){const n=r.floorIds.length+r.zoneIds.length;if(n){ftT+=n;ftE+=2;rows.push([r.name+' (입상관)',n,2,'','층·직결 분기 티 + 최상·최하 엘보']);}}
-  rows.push(['부속 합계',ftT,ftE,ftR,'길이·보온 물량은 도면(CAD) 실측 영역 — 본 산출 미포함']);
+  rows.push([]);
+  rows.push(['[밸브 집계]','품명','수량 합계','구경×수량']);
+  for(const [n,m] of Object.entries(totals)) rows.push(['',n,sumDia(m),fmtDia(m)]);
+  // 부속류 (개략 — 길이·보온 미포함: 도면 실측 영역)
+  rows.push([]);
+  rows.push(['[부속류 산출 — 개략, 구경×수량]','품목','구경×수량','비고']);
+  const fTee={},fElb={},fRed={},dTY={},dCO={};
+  for(const z of S.zones){
+    const f=zoneFittings(z), d=zoneDrainFittings(z);
+    mergeDia(fTee,f.tee); mergeDia(fElb,f.elbow); mergeDia(fRed,f.reducer);
+    mergeDia(dTY,d.ty); mergeDia(dCO,d.co);
+    rows.push([z.name,'티(급수)',fmtDia(f.tee),'분기·기구 접속 자동, 해당 지점 주관 구경']);
+    rows.push(['','엘보(급수)',fmtDia(f.elbow),'말단+기구 하강(연결관경)+존 인입 2 개략']);
+    if(Object.keys(f.reducer).length) rows.push(['','레듀서(급수)',fmtDia(f.reducer),'관경 축소 지점 자동']);
+    rows.push(['','기구접속 TY(배수)',fmtDia(d.ty),'기구 배수관경 기준']);
+    rows.push(['','청소구 C.O(배수)',fmtDia(d.co),'수평지관당 오수·잡배수 각 1 (관경 동일, 최대 100A)']);
+  }
+  for(const f of S.cw.floors){const n=f.zoneIds.length;if(n){const fr=calcFloor(f,'cw');const d=ps(fr.cwPipe);bumpDia(fTee,d,n);rows.push([f.name+' (급수 층 주관)','티(급수)',`${d}×${n}`,'존 분기마다 티 1 자동']);}}
+  for(const r of S.cw.risers){const n=r.floorIds.length+r.zoneIds.length;if(n){const rr=calcRiser(r,'cw');const d=ps(rr.cwPipe);bumpDia(fTee,d,n);bumpDia(fElb,d,2);rows.push([r.name+' (급수 입상관)','티+엘보',`티 ${d}×${n} · 엘보 ${d}×2`,'층·직결 분기 티 + 최상·최하부 엘보']);}}
+  for(const r of S.dr.risers){
+    const rr=calcRiser(r,'dr'); const parts=[];
+    if(rr.sewDFU>0){const d=ps(Math.min(rr.sewPipe,100));bumpDia(dCO,d,1);parts.push(`오수 ${d}×1`);}
+    if(rr.wstDFU>0){const d=ps(Math.min(rr.wstPipe,100));bumpDia(dCO,d,1);parts.push(`잡배수 ${d}×1`);}
+    if(parts.length)rows.push([r.name+' (배수 입상관)','청소구 C.O',parts.join(' · '),'입상관 최하부']);
+  }
+  rows.push(['[부속 합계]','티(급수)',fmtDia(fTee),'']);
+  rows.push(['','엘보(급수)',fmtDia(fElb),'']);
+  if(Object.keys(fRed).length) rows.push(['','레듀서(급수)',fmtDia(fRed),'']);
+  rows.push(['','기구접속 TY(배수)',fmtDia(dTY),'']);
+  rows.push(['','청소구 C.O(배수)',fmtDia(dCO),'']);
+  rows.push(['','','','길이·보온 물량은 도면(CAD) 실측 영역 — 본 산출 미포함']);
   const csv=String.fromCharCode(0xFEFF)+rows.map(r=>r.map(c=>`"${String(c??'').replace(/"/g,'""')}"`).join(',')).join('\r\n');
   const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
   const a=document.createElement('a');
