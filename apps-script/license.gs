@@ -126,10 +126,13 @@ function handle(p) {
     }
 
     // 나머지 요청은 전부 로그인 검증이 필요하다
-    var email = verifyEmail_(p);
-    if (!email) {
+    var who = verifyToken_(p);
+    if (!who) {
       return json({ ok: false, approved: false, error: 'auth', message: '로그인 정보를 확인할 수 없습니다. 다시 로그인해 주세요.' });
     }
+    var email = who.email;
+    // 이름은 구글 계정에서 자동으로 채운다 (사용자가 입력하지 않는다)
+    if (!p.name && who.name) p.name = who.name;
 
     var appId = normalizeAppId_(p.appId);
 
@@ -157,11 +160,12 @@ function json(obj) {
 // ═══════════════════════════════════════════════════════════
 
 /**
- * 구글 ID 토큰을 구글 서버에 물어봐서 검증한 뒤 이메일을 꺼낸다.
+ * 구글 ID 토큰을 구글 서버에 물어봐서 검증한 뒤 이메일과 이름을 꺼낸다.
  * 클라이언트가 보낸 이메일 문자열을 그대로 믿지 않는다 —
  * 그러면 아무나 남의 이메일로 권한을 조회/발급할 수 있다.
+ * 이름은 구글 계정에 있는 값을 그대로 쓴다(사용자에게 따로 묻지 않는다).
  */
-function verifyEmail_(p) {
+function verifyToken_(p) {
   var token = p.idToken || p.credential;
   if (!token) return null;
 
@@ -179,7 +183,10 @@ function verifyEmail_(p) {
   if (info.aud !== CONFIG.CLIENT_ID) return null;
   if (String(info.email_verified) !== 'true') return null;
 
-  return String(info.email).trim().toLowerCase();
+  return {
+    email: String(info.email).trim().toLowerCase(),
+    name: String(info.name || '').trim()
+  };
 }
 
 function normalizeAppId_(v) {
