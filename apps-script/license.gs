@@ -119,7 +119,8 @@ function handle(p) {
     var action = String(p.action || 'check');
 
     if (action === 'ping') {
-      return json({ ok: true, version: '1.0', trialDays: CONFIG.TRIAL_DAYS, now: new Date().toISOString() });
+      // version 은 배포가 실제로 갱신됐는지 밖에서 확인하는 용도다. 코드를 고치면 같이 올린다.
+      return json({ ok: true, version: '1.2', trialDays: CONFIG.TRIAL_DAYS, now: new Date().toISOString() });
     }
 
     // 구버전 앱 호환 경로.
@@ -807,6 +808,26 @@ function setup() {
   ensureSheets_();
   migrateLegacyOnce_();
   ss_().toast('시트 준비 완료');
+}
+
+/**
+ * 외부 통신 권한(script.external_request)을 승인받기 위한 함수.
+ *
+ * 편집기에서 이 함수를 실행하면 권한 요청 창이 뜬다. 승인한 뒤 재배포하면 된다.
+ * setup() 은 UrlFetchApp 을 쓰지 않아서, setup 만 실행하면 이 권한이 빠진 채로
+ * 승인이 끝나고 로그인 검증 단계에서 "권한이 없습니다" 오류가 난다.
+ * 하는 일은 구글 토큰 확인 주소에 요청 한 번 보내보는 것뿐이다.
+ */
+function authorize() {
+  var res = UrlFetchApp.fetch(
+    'https://oauth2.googleapis.com/tokeninfo?id_token=test',
+    { muteHttpExceptions: true }
+  );
+  var ui;
+  try { ui = SpreadsheetApp.getUi(); } catch (e) { ui = null; }
+  var msg = '외부 통신 권한 승인 완료 (응답 코드 ' + res.getResponseCode() + ').\n' +
+            '이제 「배포 → 배포 관리 → 편집 → 새 버전 → 배포」 를 해주세요.';
+  if (ui) { ui.alert(msg); } else { Logger.log(msg); }
 }
 
 /** 이관 플래그를 지운다. 이관을 다시 돌려야 할 때만 사용. */
