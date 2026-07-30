@@ -341,8 +341,10 @@ window.MEPAuth = (function () {
       row('입금자명', '<input id="mep-f-depositor" class="mep-in" placeholder="실제 입금하실 이름">') +
       row('메모 (선택)', '<input id="mep-f-memo" class="mep-in" placeholder="요청사항이 있으면">') +
       '</div>' +
-      '<label class="mep-check"><input type="checkbox" id="mep-f-tax">' +
-      '<span>세금계산서·현금영수증이 필요합니다</span></label>' +
+      // 사업자 등록 전이라 증빙 발행이 불가능하다. 체크박스로 물어보면 발행되는 줄 알고
+      // 결제한 뒤에 알게 되어 분쟁이 된다. 신청 전에 분명히 알리는 것이 맞다.
+      '<p class="mep-notice">세금계산서·현금영수증은 <b>발행해 드릴 수 없습니다.</b><br>' +
+      '개인 간 거래로 진행되며, 회사 경비 처리가 필요하시면 신청 전에 확인해 주세요.</p>' +
       '<p class="mep-fine" style="text-align:left">입금 확인 후 계정이 정식으로 전환됩니다(보통 하루 이내).<br>' +
       '전환되면 이 화면 없이 바로 사용하실 수 있습니다.</p>',
       [
@@ -373,8 +375,9 @@ window.MEPAuth = (function () {
       apps: plan === 'all' ? 'all' : cfg.appId,
       amount: String(plan === 'all' ? cfg.priceBundle : cfg.priceSingle),
       depositor: depositor,
-      memo: val('mep-f-memo'),
-      taxInvoice: !!(document.getElementById('mep-f-tax') || {}).checked
+      memo: val('mep-f-memo')
+      // taxInvoice 는 보내지 않는다 — 발행이 불가하므로 백엔드에서 항상 'N' 으로 기록된다.
+      // 나중에 사업자 등록을 하면 체크박스를 되살리고 이 값을 다시 보내면 된다.
     }).then(function () {
       closeModal();
       toast('신청이 접수되었습니다. 입금 확인 후 바로 전환해 드리겠습니다.');
@@ -580,6 +583,9 @@ window.MEPAuth = (function () {
       '  background:#fbfcfe;color:#1a2a4a;width:100%}',
       '.mep-in:focus{outline:none;border-color:#2563eb;background:#fff}',
       '.mep-check{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;color:#5a6b85;margin:2px 0 4px}',
+      '.mep-notice{font-size:12.5px;line-height:1.6;color:#8a5a1a;background:#fff8ed;border:1px solid #f5dcb8;',
+      '  border-radius:8px;padding:10px 12px;margin:2px 0 4px;text-align:left}',
+      '.mep-notice b{color:#9a3412}',
       '.mep-check i{color:#8b98ad;font-style:normal}',
       '.mep-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}',
       // 요금제 / 계좌
