@@ -14,7 +14,7 @@
  *
  * ── 시트 ──
  *  라이선스   이메일 | 앱 | 유형 | 발급일 | 만료일 | 메모      ← 권한의 원본
- *  고객       이메일 | 이름 | 회사 | 연차 | 직무 | 관심분야 | 유입경로 | 수신동의 | 연장적용 | 갱신일
+ *  고객       이메일 | 이름 | 회사 | 연차 | 직무 | 이전불편 | 불편상세 | 유입경로 | 수신동의 | 연장적용 | 갱신일
  *  구매신청   신청일시 | 이메일 | 신청앱 | 금액 | 입금자명 | 세금계산서 | 메모 | 처리상태
  *
  *  만료일이 비어 있으면 무기한이다.
@@ -73,8 +73,15 @@ const SHEETS = {
 
 const HEADERS = {
   LICENSE: ['이메일', '앱', '유형', '발급일', '만료일', '메모'],
-  CUSTOMER: ['이메일', '이름', '회사', '연차', '직무', '관심분야', '유입경로', '수신동의', '연장적용', '갱신일'],
+  CUSTOMER: ['이메일', '이름', '회사', '연차', '직무', '이전불편', '불편상세', '유입경로', '수신동의', '연장적용', '갱신일'],
   ORDER: ['신청일시', '이메일', '신청앱', '금액', '입금자명', '세금계산서', '메모', '처리상태']
+};
+
+// 「고객」 시트의 열 위치(0부터). 열을 추가하거나 옮기면 여기만 고치면 된다.
+// 예전에 숫자를 코드 곳곳에 박아뒀다가 열이 하나 늘면서 집계가 엉뚱한 칸을 읽는 일이 있었다.
+const C = {
+  EMAIL: 0, NAME: 1, COMPANY: 2, YEARS: 3, ROLE: 4,
+  PAIN: 5, PAIN_DETAIL: 6, CHANNEL: 7, CONSENT: 8, BONUS: 9, UPDATED: 10
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -316,7 +323,7 @@ function saveProfile_(email, appId, p) {
       if (String(values[i][0]).trim().toLowerCase() === email) { rowIndex = i + 1; break; }
     }
 
-    var alreadyBonused = rowIndex > 0 ? String(values[rowIndex - 1][8]).toUpperCase() === 'Y' : false;
+    var alreadyBonused = rowIndex > 0 ? String(values[rowIndex - 1][C.BONUS]).toUpperCase() === 'Y' : false;
 
     // 수신동의는 반드시 사용자가 직접 체크한 값만 저장한다.
     // 광고성 메일은 사전 동의가 없으면 보낼 수 없다(정보통신망법).
@@ -328,7 +335,8 @@ function saveProfile_(email, appId, p) {
       str_(p.company, 60),
       str_(p.years, 20),
       str_(p.role, 40),
-      str_(p.purpose, 200),
+      str_(p.pain, 40),          // 드롭다운 — 집계용
+      str_(p.painDetail, 500),   // 서술 — 그대로 인용할 수 있는 문장
       str_(p.channel, 60),
       consent,
       alreadyBonused ? 'Y' : 'N',
@@ -347,14 +355,16 @@ function saveProfile_(email, appId, p) {
     if (!alreadyBonused && CONFIG.TRIAL_BONUS_DAYS > 0) {
       extended = extendTrial_(email, appId, CONFIG.TRIAL_BONUS_DAYS);
       if (extended > 0) {
-        sh.getRange(rowIndex, 9).setValue('Y');
+        sh.getRange(rowIndex, C.BONUS + 1).setValue('Y');
       }
     }
 
     notify_('[프로필 등록] ' + email,
       '회사: ' + (p.company || '-') + '\n연차: ' + (p.years || '-') +
       '\n직무: ' + (p.role || '-') + '\n유입경로: ' + (p.channel || '-') +
-      '\n관심/목적: ' + (p.purpose || '-') + '\n수신동의: ' + consent);
+      '\n이전 불편: ' + (p.pain || '-') +
+      (p.painDetail ? '\n  "' + p.painDetail + '"' : '') +
+      '\n수신동의: ' + consent);
 
     var access = checkAccess_(email, appId);
     access.extendedDays = extended;
@@ -455,6 +465,14 @@ function ensureSheet_(ss, name, headers) {
   if (sh.getLastRow() === 0) {
     sh.appendRow(headers);
     sh.setFrozenRows(1);
+    return sh;
+  }
+  // 데이터 행이 아직 없으면 머리글을 최신 구성으로 맞춘다.
+  // 열을 추가한 뒤 첫 배포 때 머리글만 옛 것으로 남는 것을 막는다.
+  // 데이터가 한 줄이라도 있으면 절대 건드리지 않는다.
+  if (sh.getLastRow() === 1 && sh.getLastColumn() <= headers.length) {
+    sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sh.getRange(1, 1, 1, headers.length).setFontWeight('bold');
   }
   return sh;
 }
@@ -598,7 +616,7 @@ function hasProfile_(email) {
   var values = sheet_(SHEETS.CUSTOMER).getDataRange().getValues();
   for (var i = 1; i < values.length; i++) {
     if (String(values[i][0]).trim().toLowerCase() === email) {
-      return String(values[i][2] || '').trim() !== '';   // 회사 칸이 채워졌으면 입력한 것으로 본다
+      return String(values[i][C.COMPANY] || '').trim() !== '';   // 회사 칸이 채워졌으면 입력한 것으로 본다
     }
   }
   return false;
@@ -660,6 +678,7 @@ function onOpen() {
     .addSeparator()
     .addItem('수신 동의자 목록 보기', 'menuSubscribers')
     .addItem('유입경로 집계 보기', 'menuChannels')
+    .addItem('이전 불편 집계 + 실제 문장 보기', 'menuPains')
     .addSeparator()
     .addItem('시트 준비 / 기존 승인자 이관', 'setup')
     .addToUi();
@@ -739,16 +758,39 @@ function menuSubscribers() {
   var values = sheet_(SHEETS.CUSTOMER).getDataRange().getValues();
   var out = [];
   for (var i = 1; i < values.length; i++) {
-    if (String(values[i][7]).toUpperCase() === 'Y') out.push(values[i][0]);
+    if (String(values[i][C.CONSENT]).toUpperCase() === 'Y') out.push(values[i][C.EMAIL]);
   }
   SpreadsheetApp.getUi().alert('수신 동의 ' + out.length + '명\n\n' + out.join('\n'));
+}
+
+/**
+ * 이전 불편 집계 + 고객이 직접 쓴 문장.
+ * 집계는 랜딩 페이지 헤드라인의 근거가 되고,
+ * 서술 문장은 그대로 인용하면 내가 지어낸 문구보다 훨씬 잘 먹힌다.
+ */
+function menuPains() {
+  var values = sheet_(SHEETS.CUSTOMER).getDataRange().getValues();
+  var count = {};
+  var quotes = [];
+  for (var i = 1; i < values.length; i++) {
+    var pain = String(values[i][C.PAIN] || '').trim() || '(미입력)';
+    count[pain] = (count[pain] || 0) + 1;
+    var detail = String(values[i][C.PAIN_DETAIL] || '').trim();
+    if (detail) quotes.push('· "' + detail + '"  — ' + String(values[i][C.COMPANY] || '').trim());
+  }
+  var lines = Object.keys(count).sort(function (a, b) { return count[b] - count[a]; })
+    .map(function (k) { return k + ' — ' + count[k] + '명'; });
+
+  SpreadsheetApp.getUi().alert(
+    '이전에 불편했던 것\n\n' + (lines.join('\n') || '아직 자료가 없습니다.') +
+    (quotes.length ? '\n\n─── 직접 쓴 문장 ───\n' + quotes.join('\n') : ''));
 }
 
 function menuChannels() {
   var values = sheet_(SHEETS.CUSTOMER).getDataRange().getValues();
   var count = {};
   for (var i = 1; i < values.length; i++) {
-    var ch = String(values[i][6] || '').trim() || '(미입력)';
+    var ch = String(values[i][C.CHANNEL] || '').trim() || '(미입력)';
     count[ch] = (count[ch] || 0) + 1;
   }
   var lines = Object.keys(count).sort(function (a, b) { return count[b] - count[a]; })
@@ -777,7 +819,7 @@ function listNewsletterSubscribers() {
   var values = sheet_(SHEETS.CUSTOMER).getDataRange().getValues();
   var out = [];
   for (var i = 1; i < values.length; i++) {
-    if (String(values[i][7]).toUpperCase() === 'Y') out.push(values[i][0]);
+    if (String(values[i][C.CONSENT]).toUpperCase() === 'Y') out.push(values[i][C.EMAIL]);
   }
   Logger.log('수신동의 ' + out.length + '명\n' + out.join(', '));
 }
@@ -787,7 +829,7 @@ function reportChannels() {
   var values = sheet_(SHEETS.CUSTOMER).getDataRange().getValues();
   var count = {};
   for (var i = 1; i < values.length; i++) {
-    var ch = String(values[i][6] || '(미입력)').trim() || '(미입력)';
+    var ch = String(values[i][C.CHANNEL] || '(미입력)').trim() || '(미입력)';
     count[ch] = (count[ch] || 0) + 1;
   }
   var lines = Object.keys(count).sort(function (a, b) { return count[b] - count[a]; })

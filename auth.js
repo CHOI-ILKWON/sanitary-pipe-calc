@@ -265,9 +265,16 @@ window.MEPAuth = (function () {
       row('경력', '<select id="mep-f-years" class="mep-in">' +
         opt(['', '3년 미만', '3~7년', '8~15년', '16년 이상', '학생·수험생']) + '</select>') +
       row('담당 업무', '<input id="mep-f-role" class="mep-in" placeholder="기계설비 설계 / 감리 / 시공">') +
+      // 이 문항이 마케팅 문구의 원천이 된다.
+      // 드롭다운은 집계가 되고("반려가 40%"), 서술은 그대로 인용할 수 있는 문장이 된다.
+      row('이 앱을 쓰기 전, 가장 번거로웠던 일', '<select id="mep-f-pain" class="mep-in">' +
+        opt(['', '손계산·엑셀 반복 작업', '발주처 반려·재작업', '계통도 작도 시간',
+             '기준·근거 찾기 어려움', '검토 실수 걱정', '기타']) + '</select>') +
+      row('구체적으로 어떤 상황이었나요 (선택)',
+        '<textarea id="mep-f-pain-detail" class="mep-in" rows="2" ' +
+        'placeholder="예: 기구 수가 바뀔 때마다 엑셀을 처음부터 다시 만들어야 했습니다"></textarea>') +
       row('어떻게 알게 되셨나요', '<select id="mep-f-channel" class="mep-in">' +
         opt(['', '블로그·검색', '네이버 카페·지식iN', '유튜브', '지인 소개', '인스타·스레드', '소개 사이트', '기타']) + '</select>') +
-      row('가장 필요한 것', '<textarea id="mep-f-purpose" class="mep-in" rows="2" placeholder="예: 발주처 제출용 계산서를 빨리 만들어야 합니다"></textarea>') +
       '</div>' +
       '<label class="mep-check"><input type="checkbox" id="mep-f-consent">' +
       '<span>새 기능·신규 앱 소식을 메일로 받겠습니다 <i>(선택, 언제든 해지 가능)</i></span></label>',
@@ -284,7 +291,8 @@ window.MEPAuth = (function () {
       years:   val('mep-f-years'),
       role:    val('mep-f-role'),
       channel: val('mep-f-channel') || detectChannel(),
-      purpose: val('mep-f-purpose'),
+      pain: val('mep-f-pain'),
+      painDetail: val('mep-f-pain-detail'),
       consent: !!(document.getElementById('mep-f-consent') || {}).checked
     };
     if (!payload.company) { alert('회사 / 소속만 꼭 채워주세요.'); return; }
