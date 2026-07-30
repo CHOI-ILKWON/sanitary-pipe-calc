@@ -164,81 +164,23 @@ select:focus{outline:none;border-color:var(--accent)}
 </head>
 <body>
 
-<div id="auth-gate" style="
-  max-width: 480px; margin: 100px auto; padding: 40px;
-  font-family: -apple-system, sans-serif; text-align: center;
-  border: 1px solid #e5e7eb; border-radius: 16px;">
-
-  <h2 style="margin-bottom: 8px;">위생배관 관경 산정 프로그램</h2>
-  <p style="color: #6b7280; margin-bottom: 24px;">구매하신 분만 이용 가능합니다.</p>
-
-  <div id="g_id_signin_container"></div>
-
-  <p id="auth-status" style="margin-top: 20px; color: #ef4444; font-size: 14px;"></p>
-
-  <div id="not-purchased-box" style="display:none; margin-top: 20px; padding: 16px; background:#fef2f2; border-radius:8px;">
-    <p style="font-size: 14px; color:#374151; margin-bottom:12px;">
-      구매 인증 내역이 없습니다.<br>결제 후 아래 버튼으로 인증을 등록해주세요.
-    </p>
-    <a id="buy-link" href="#" target="_blank" style="
-      display:inline-block; background:#2563eb; color:white;
-      padding:10px 20px; border-radius:8px; text-decoration:none; font-weight:600;">
-      구매 인증 등록하러 가기
-    </a>
-  </div>
-</div>
+<div id="auth-gate"></div>
 
 <script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="auth.js?v=1"></script>
 <script>
-  // ====== 여기 두 값만 본인 정보로 교체하세요 ======
-  const GOOGLE_CLIENT_ID = "631559035777-ara2uhplj7ds41ehfrr97cef8jlj4rip.apps.googleusercontent.com";
-  const WHITELIST_API_URL = "https://script.google.com/macros/s/AKfycbzOwmnJdBeqkH4QMdbQRagHXFnOA7sXnkQDmGeerVi4mYUF9WL_vB3C8LIq1-AZekQX/exec";
-  const PURCHASE_FORM_URL = "https://forms.gle/EP4tU9TEfhyY3D1s9";
+  // ====== 여기 값만 본인 정보로 교체하세요 ======
+  MEPAuth.init({
+    clientId:  "631559035777-ara2uhplj7ds41ehfrr97cef8jlj4rip.apps.googleusercontent.com",
+    apiUrl:    "https://script.google.com/macros/s/AKfycbzOwmnJdBeqkH4QMdbQRagHXFnOA7sXnkQDmGeerVi4mYUF9WL_vB3C8LIq1-AZekQX/exec",
+    appId:     "sanitary",              // 라이선스 시트의 "앱" 칸에 들어가는 값
+    appName:   "위생배관 관경 산정 프로그램",
+    trialDays: 7,                       // 백엔드 CONFIG.TRIAL_DAYS 와 같게 맞추세요
+    priceSingle: 99000,                 // 단품 가격
+    priceBundle: 0,                     // 전 앱 팩 가격 — 0 이면 구매 화면에 표시하지 않음
+    bankInfo:  "카카오뱅크 3333-07-0554442 (최일권)"
+  });
   // ================================================
-
-  document.getElementById("buy-link").href = PURCHASE_FORM_URL;
-
-  window.onload = function () {
-    google.accounts.id.initialize({
-      client_id: GOOGLE_CLIENT_ID,
-      callback: handleGoogleLogin
-    });
-    google.accounts.id.renderButton(
-      document.getElementById("g_id_signin_container"),
-      { theme: "outline", size: "large", text: "signin_with" }
-    );
-  };
-
-  function parseJwt(token) {
-    const base64Url = token.split(".")[1];
-    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
-    return JSON.parse(decodeURIComponent(escape(window.atob(base64))));
-  }
-
-  function handleGoogleLogin(response) {
-    const payload = parseJwt(response.credential);
-    const email = payload.email;
-
-    document.getElementById("auth-status").innerText = "인증 확인 중...";
-
-    fetch(WHITELIST_API_URL + "?email=" + encodeURIComponent(email))
-      .then(res => res.json())
-      .then(data => {
-        if (data.approved) {
-          // 인증 성공 - 계산기 화면 표시
-          document.getElementById("auth-gate").style.display = "none";
-          document.getElementById("app-content").style.display = "block";
-          // 새로고침해도 유지하려면 세션에 잠깐 기억 (탭 닫으면 사라짐, 영구저장 아님)
-          sessionStorage.setItem("verified_email", email);
-        } else {
-          document.getElementById("auth-status").innerText = "";
-          document.getElementById("not-purchased-box").style.display = "block";
-        }
-      })
-      .catch(() => {
-        document.getElementById("auth-status").innerText = "인증 서버 연결에 실패했습니다. 잠시 후 다시 시도해주세요.";
-      });
-  }
 </script>
 
 <div id="app-content" style="display:none;">
