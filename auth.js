@@ -65,6 +65,11 @@ window.MEPAuth = (function () {
     });
   }
 
+  /** 측정 이벤트. GA4 가 없으면 조용히 넘어간다 — 인증이 측정에 의존하면 안 된다. */
+  function track(name, params) {
+    try { if (window.gtag) window.gtag('event', name, params || {}); } catch (e) { /* 측정 실패는 무시 */ }
+  }
+
   function getEmail() { return email; }
   function getState() { return state; }
 
@@ -136,7 +141,10 @@ window.MEPAuth = (function () {
     api('trial', { channel: detectChannel(), ref: document.referrer || '' })
       .then(function (data) {
         state = normalize(data);
-        if (state.approved) return enterApp();
+        if (state.approved) {
+          track('trial_start', { app_id: cfg.appId, channel: detectChannel() });
+          return enterApp();
+        }
         renderGate(state.status === 'expired' ? 'expired' : 'error',
           { message: data.message || '체험을 시작할 수 없습니다.' });
       })
@@ -302,6 +310,7 @@ window.MEPAuth = (function () {
       state = normalize(data);
       closeModal();
       renderBanner();
+      track('profile_submit', { app_id: cfg.appId, extended_days: data.extendedDays || 0 });
       toast(data.extendedDays > 0
         ? '감사합니다. 체험이 ' + data.extendedDays + '일 연장되었습니다.'
         : '감사합니다. 저장되었습니다.');
@@ -315,6 +324,7 @@ window.MEPAuth = (function () {
   // ═══════════════════════════════════════════════════
 
   function openPurchase() {
+    track('purchase_view', { app_id: cfg.appId, status: (state && state.status) || 'unknown' });
     var single = won(cfg.priceSingle);
     var bundle = won(cfg.priceBundle);
 
@@ -380,6 +390,12 @@ window.MEPAuth = (function () {
       // 나중에 사업자 등록을 하면 체크박스를 되살리고 이 값을 다시 보내면 된다.
     }).then(function () {
       closeModal();
+      track('purchase_request', {
+        app_id: cfg.appId,
+        plan: plan,
+        value: plan === 'all' ? cfg.priceBundle : cfg.priceSingle,
+        currency: 'KRW'
+      });
       toast('신청이 접수되었습니다. 입금 확인 후 바로 전환해 드리겠습니다.');
     }).catch(function (err) {
       modalError(err.message);

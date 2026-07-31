@@ -161,13 +161,21 @@ select:focus{outline:none;border-color:var(--accent)}
   body{background:#fff;color:#000}
 }
 </style>
+<!-- 방문 측정 (GA4) — 체험 시작·구매 신청을 이벤트로 잡는다 -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-BL4VM4LDVL"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){ dataLayer.push(arguments); }
+  gtag('js', new Date());
+  gtag('config', 'G-BL4VM4LDVL');
+</script>
 </head>
 <body>
 
 <div id="auth-gate"></div>
 
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-<script src="auth.js?v=3"></script>
+<script src="auth.js?v=4"></script>
 <script>
   // ====== 여기 값만 본인 정보로 교체하세요 ======
   MEPAuth.init({
