@@ -303,32 +303,28 @@ function ps(p){ return p ? p+'A' : 'N/A' }
 
 // ── Calc (tree-based, used internally) ────────────────────────────────────────
 function calcNode(node){
-  let cwQ=0,hwQ=0,sewDFU=0,wstDFU=0;
-  let mCw=0,mHw=0,mSew=0,mWst=0;
+  const a=newAcc();
   const fx = node.fixtures||{};
   for(const k of FX_KEYS){
     const n=fx[k]||0; if(!n) continue;
-    const f=FX[k];
-    cwQ+=f.cwQ*n;
-    if(f.hot) hwQ+=f.cwQ*n;
-    if(f.drain==='sew'){sewDFU+=f.dfu*n; mSew=Math.max(mSew,f.dc);}
-    else               {wstDFU+=f.dfu*n; mWst=Math.max(mWst,f.dc);}
-    if(f.cwQ>0) mCw=Math.max(mCw,f.conn);
-    if(f.hot)   mHw=Math.max(mHw,f.conn);
+    const f=FX[k], isFV=FV_KEYS.includes(k);
+    if(f.cwQ>0){
+      if(isFV){a.fvCw+=f.cwQ*n; a.fvCnt+=n;} else {a.genCw+=f.cwQ*n; a.genCnt+=n;}
+      a.mCw=Math.max(a.mCw,f.conn);
+      if(f.hot){
+        if(isFV){a.fvHw+=f.cwQ*n; a.hwFvCnt+=n;} else {a.genHw+=f.cwQ*n; a.hwGenCnt+=n;}
+        a.mHw=Math.max(a.mHw,f.conn);
+      }
+    }
+    if(f.dfu>0&&f.drain){
+      if(f.drain==='sew'){a.sewRaw+=f.dfu*n; a.sewCnt+=n; a.mSew=Math.max(a.mSew,f.dc);}
+      else               {a.wstRaw+=f.dfu*n; a.wstCnt+=n; a.mWst=Math.max(a.mWst,f.dc);}
+    }
   }
   const kids=(node.children||[]).map(c=>calcNode(c));
-  for(const c of kids){
-    cwQ+=c.cwQ; hwQ+=c.hwQ; sewDFU+=c.sewDFU; wstDFU+=c.wstDFU;
-    mCw=Math.max(mCw,c.cwPipe); mHw=Math.max(mHw,c.hwPipe);
-    mSew=Math.max(mSew,c.sewPipe); mWst=Math.max(mWst,c.wstPipe);
-  }
-  return {
-    cwQ, hwQ, sewDFU, wstDFU, kids, node,
-    cwPipe:  cwQ>0  ? Math.max(flowPipe(cwQ), mCw)          : 0,
-    hwPipe:  hwQ>0  ? Math.max(flowPipe(hwQ), mHw)          : 0,
-    sewPipe: sewDFU>0? Math.max(sewPipe(sewDFU), mSew, 100) : 0,
-    wstPipe: wstDFU>0? Math.max(wstPipe(wstDFU),mWst, 50)  : 0,
-  };
+  for(const c of kids) accAdd(a,c,false);
+  // 각 구간마다 그 구간이 담당하는 기구수로 동시사용계수를 적용
+  return Object.assign(accResult(a),{kids,node});
 }
 
 // ── Pipe graph → calc tree conversion ─────────────────────────────────────────
@@ -344,23 +340,8 @@ function pipeToCalcNode(id, nodes){
 }
 
 function calcZone(z){
-  const tree=calcNode(pipeToCalcNode(z.pipe.rootId, z.pipe.nodes));
-  // 존 기구수 기반 동시사용률 적용 (IPC 방식)
-  if(S.cwSimultMode!=='legacy'){
-    let cwCnt=0, hwCnt=0;
-    const t=zoneFxTotals(z);
-    for(const k of FX_KEYS){
-      const n=t[k]||0; if(!n)continue;
-      if(FX[k].cwQ>0) cwCnt+=n;
-      if(FX[k].hot&&!z.elecHW) hwCnt+=n;
-    }
-    const cwF=cwSimult(cwCnt), hwF=cwSimult(hwCnt);
-    tree.cwQ*=cwF; tree.hwQ*=hwF;
-    tree.cwPipe=tree.cwQ>0?Math.max(flowPipe(tree.cwQ),0):0;
-    tree.hwPipe=tree.hwQ>0?Math.max(flowPipe(tree.hwQ),0):0;
-    tree.cwSimultF=cwF; tree.hwSimultF=hwF; tree.cwCnt=cwCnt; tree.hwCnt=hwCnt;
-  }
-  return tree;
+  // 트리의 모든 구간이 각자의 담당 기구수로 계수 적용됨 (루트 = 존 전체)
+  return calcNode(pipeToCalcNode(z.pipe.rootId, z.pipe.nodes));
 }
 
 function zoneFxTotals(z){
@@ -400,12 +381,53 @@ function wstSimult(cnt){
   if(cnt<=3) return 1.0; if(cnt<=6) return 0.8; if(cnt<=10) return 0.7;
   if(cnt<=20) return 0.65; return 0.6;
 }
-// 급수·급탕 동시사용률 — 기구수 기반 곡선 (일반 설계표 기준)
-function cwSimult(n){
-  if(n<=2)  return 1.0;  if(n<=4)  return 0.8;  if(n<=8)  return 0.7;
-  if(n<=12) return 0.62; if(n<=16) return 0.58; if(n<=24) return 0.52;
-  if(n<=32) return 0.48; if(n<=40) return 0.44; if(n<=70) return 0.40;
-  if(n<=100)return 0.36; return 0.33;
+// 급수·급탕 동시사용계수 — 공조위생 기술데이터북(한미) 자료
+// 기구수 구간은 계단식: 표에 없는 수는 바로 아래 구간값을 따름 (예: 25~31 → 24 기준)
+const SIM_N   =[  1,  2,   3,  4,   5,  6,   7,  8,    9,   10,   11, 12,   13,  14,   15, 16,   17,  18,   19, 20,   21,  22,   23, 24, 32, 40, 50, 70,100];
+const SIM_FV  =[100,100,82.5, 65,  60, 55,  50, 45,43.75,42.50,41.25, 40,38.75,37.5,36.25, 35,33.75,32.5,31.25, 30,28.75,27.5,26.25, 25, 19, 17, 15, 12, 10];
+const SIM_GEN =[100,100,  90, 80,77.5, 75,72.5, 70,66.25,62.50,58.75, 55,53.75,52.5,51.25, 50,49.75,49.5,49.25, 49,48.75,48.5,48.25, 48, 45, 40, 38, 35, 33];
+function simLookup(n,arr){
+  if(n<=0) return 1;
+  let v=arr[0];
+  for(let i=0;i<SIM_N.length;i++){ if(n>=SIM_N[i]) v=arr[i]; else break; }
+  return v/100;
+}
+function fvSimult(n){ return simLookup(n,SIM_FV); }   // 대변기(세정밸브)
+function genSimult(n){ return simLookup(n,SIM_GEN); } // 일반기구
+// 세정밸브 대변기는 별도 곡선 — 그룹별 유량에 각자의 계수를 적용 후 합산
+const FV_KEYS=['wc_v'];
+function suppSimult(a){
+  const rawCw=a.fvCw+a.genCw, rawHw=a.fvHw+a.genHw;
+  if(S.cwSimultMode==='legacy') return {cwQ:rawCw,hwQ:rawHw,cwF:1,hwF:1};
+  const cwQ=a.fvCw*fvSimult(a.fvCnt)+a.genCw*genSimult(a.genCnt);
+  const hwQ=a.fvHw*fvSimult(a.hwFvCnt)+a.genHw*genSimult(a.hwGenCnt);
+  return {cwQ,hwQ,cwF:rawCw?cwQ/rawCw:1,hwF:rawHw?hwQ/rawHw:1};
+}
+// ── 계층 누적기: 각 단계는 항상 '원시 합계'를 모아 자기 기구수로 계수를 적용한다
+//    (자식의 이미 계수가 곱해진 값을 다시 곱하는 이중 적용을 방지)
+function newAcc(){return {fvCw:0,genCw:0,fvHw:0,genHw:0,fvCnt:0,genCnt:0,hwFvCnt:0,hwGenCnt:0,
+  sewRaw:0,wstRaw:0,sewCnt:0,wstCnt:0,mCw:0,mHw:0,mSew:0,mWst:0};}
+function accAdd(a,r,skipHot){
+  a.fvCw+=r.fvCw; a.genCw+=r.genCw; a.fvCnt+=r.fvCnt; a.genCnt+=r.genCnt;
+  if(!skipHot){a.fvHw+=r.fvHw; a.genHw+=r.genHw; a.hwFvCnt+=r.hwFvCnt; a.hwGenCnt+=r.hwGenCnt;}
+  a.sewRaw+=r.sewRaw; a.wstRaw+=r.wstRaw; a.sewCnt+=r.sewCnt; a.wstCnt+=r.wstCnt;
+  a.mCw=Math.max(a.mCw,r.cwPipe); if(!skipHot)a.mHw=Math.max(a.mHw,r.hwPipe);
+  a.mSew=Math.max(a.mSew,r.sewPipe); a.mWst=Math.max(a.mWst,r.wstPipe);
+}
+function accResult(a){
+  const s=suppSimult(a);
+  const sf=sewSimult(a.sewCnt), wf=wstSimult(a.wstCnt);
+  const sD=a.sewRaw*sf, wD=a.wstRaw*wf;
+  const sp=sD>0?Math.max(sewPipe(sD),a.mSew,100):0;
+  const wp=wD>0?Math.max(wstPipe(wD),a.mWst,50):0;
+  return Object.assign({},a,{
+    cwQ:s.cwQ, hwQ:s.hwQ, cwSimultF:s.cwF, hwSimultF:s.hwF,
+    cwCnt:a.fvCnt+a.genCnt, hwCnt:a.hwFvCnt+a.hwGenCnt,
+    sewDFU:sD, wstDFU:wD, sewSimult:sf, wstSimult:wf,
+    cwPipe:s.cwQ>0?Math.max(flowPipe(s.cwQ),a.mCw):0,
+    hwPipe:s.hwQ>0?Math.max(flowPipe(s.hwQ),a.mHw):0,
+    sewPipe:sp, wstPipe:wp,
+    sewVent:ventPipe(sD,sp), wstVent:ventPipe(wD,wp)});
 }
 // 통기관경 — DFU 기반 개략 + 담당 배수관경의 1/2 이상, 최소 32A
 const VENT_SIZES=[32,40,50,65,75,100,125,150];
@@ -419,70 +441,22 @@ function ventPipe(dfu,drainD){
   return v;
 }
 
-// ── Floor calc (with simultaneous factor for all fixtures) ──────────────────
+// ── Floor calc — 층 담당 기구수로 계수 적용 ─────────────────────────────────
 function calcFloor(floor, type){
   const zs=floor.zoneIds.map(id=>S.zones.find(z=>z.id===id)).filter(Boolean);
-  let cwQ=0,hwQ=0,sD=0,wD=0,cwCnt=0,hwCnt=0,sewCnt=0,wstCnt=0;
-  for(const z of zs){
-    const r=calcZone(z);cwQ+=r.cwQ;if(!z.elecHW)hwQ+=r.hwQ;sD+=r.sewDFU;wD+=r.wstDFU;
-    const t=zoneFxTotals(z);
-    for(const k of FX_KEYS){
-      const n=t[k]||0; if(!n)continue;
-      if(FX[k].drain==='sew')sewCnt+=n; else wstCnt+=n;
-      if(FX[k].cwQ>0)cwCnt+=n;
-      if(FX[k].hot&&!z.elecHW)hwCnt+=n;
-    }
-  }
-  // 오배수 동시사용률
-  const sf=sewSimult(sewCnt),wf=wstSimult(wstCnt);
-  sD*=sf; wD*=wf;
-  // 급수·급탕 동시사용률 (기구수 곡선)
-  let cwF=1,hwF=1;
-  if(S.cwSimultMode!=='legacy'){ cwF=cwSimult(cwCnt); hwF=cwSimult(hwCnt); cwQ*=cwF; hwQ*=hwF; }
-  const sp=sD>0?Math.max(sewPipe(sD),100):0;
-  const wp=wD>0?Math.max(wstPipe(wD),50):0;
-  return {cwQ,hwQ,sewDFU:sD,wstDFU:wD,
-    cwPipe:flowPipe(cwQ),hwPipe:flowPipe(hwQ),
-    sewPipe:sp,wstPipe:wp,cnt:zs.length,
-    cwSimultF:cwF,hwSimultF:hwF,cwCnt,hwCnt,sewSimult:sf,wstSimult:wf};
+  const a=newAcc();
+  for(const z of zs) accAdd(a,calcZone(z),z.elecHW);
+  return Object.assign(accResult(a),{cnt:zs.length});
 }
 
-// ── Riser calc (floors + direct zones, with simultaneous factor) ──────────────
+// ── Riser calc — 입상관 담당 기구수로 계수 적용 ──────────────────────────────
 function calcRiser(riser, type){
   const floors=riser.floorIds.map(id=>S[type].floors.find(f=>f.id===id)).filter(Boolean);
   const zones=riser.zoneIds.map(id=>S.zones.find(z=>z.id===id)).filter(Boolean);
-  let cwQ=0,hwQ=0,sD=0,wD=0,sewCnt=0,wstCnt=0,cwCnt=0,hwCnt=0;
-  const addCnt=(z)=>{
-    const t=zoneFxTotals(z);
-    for(const k of FX_KEYS){
-      const n=t[k]||0; if(!n)continue;
-      if(FX[k].drain==='sew')sewCnt+=n; else wstCnt+=n;
-      if(FX[k].cwQ>0)cwCnt+=n;
-      if(FX[k].hot&&!z.elecHW)hwCnt+=n;
-    }
-  };
-  for(const fl of floors){
-    const r=calcFloor(fl,type); cwQ+=r.cwQ;hwQ+=r.hwQ;sD+=r.sewDFU;wD+=r.wstDFU;
-    for(const zid of fl.zoneIds){const z=S.zones.find(z=>z.id===zid);if(z)addCnt(z);}
-  }
-  for(const z of zones){
-    const r=calcZone(z);cwQ+=r.cwQ;if(!z.elecHW)hwQ+=r.hwQ;sD+=r.sewDFU;wD+=r.wstDFU;
-    addCnt(z);
-  }
-  const items=floors.length+zones.length;
-  // 오배수 동시사용률 (기구수 기반)
-  const sf=sewSimult(sewCnt),wf=wstSimult(wstCnt);
-  sD*=sf; wD*=wf;
-  // 급수·급탕 동시사용률 — '기구수 곡선' 모드에서 입상관에도 적용
-  let cwF=1,hwF=1;
-  if(S.cwSimultMode!=='legacy'){ cwF=cwSimult(cwCnt); hwF=cwSimult(hwCnt); cwQ*=cwF; hwQ*=hwF; }
-  const sp=sD>0?Math.max(sewPipe(sD),100):0;
-  const wp=wD>0?Math.max(wstPipe(wD),50):0;
-  return {cwQ,hwQ,sewDFU:sD,wstDFU:wD,
-    cwPipe:flowPipe(cwQ),hwPipe:flowPipe(hwQ),
-    sewPipe:sp, wstPipe:wp,
-    sewVent:ventPipe(sD,sp), wstVent:ventPipe(wD,wp),
-    cnt:items,sewSimult:sf,wstSimult:wf,cwSimultF:cwF,hwSimultF:hwF,cwCnt,hwCnt};
+  const a=newAcc();
+  for(const fl of floors) accAdd(a,calcFloor(fl,type),false); // 층 결과에 elecHW 이미 반영
+  for(const z of zones)   accAdd(a,calcZone(z),z.elecHW);
+  return Object.assign(accResult(a),{cnt:floors.length+zones.length});
 }
 
 // ── Zone IDs already allocated (anywhere in the hierarchy for a type) ─────────
@@ -513,58 +487,24 @@ function floorsNotInRiser(type, exceptRiserId){
   return S[type].floors.filter(f=>!used.has(f.id));
 }
 
-// MAIN관에 연결된 모든 존 수집 (입상관 산하 + 층 직결 + 존 직결 + 미배정)
-function mainMemberZones(type){
-  const main=S[type].main, out=new Map();
-  const addZ=z=>{if(z)out.set(z.id,z);};
-  for(const rid of main.riserIds){
-    const r=S[type].risers.find(r=>r.id===rid);if(!r)continue;
-    for(const fid of r.floorIds){const f=S[type].floors.find(f=>f.id===fid);if(f)for(const zid of f.zoneIds)addZ(S.zones.find(z=>z.id===zid));}
-    for(const zid of r.zoneIds)addZ(S.zones.find(z=>z.id===zid));
-  }
-  for(const fid of main.floorIds){const f=S[type].floors.find(f=>f.id===fid);if(f)for(const zid of f.zoneIds)addZ(S.zones.find(z=>z.id===zid));}
-  for(const zid of main.zoneIds)addZ(S.zones.find(z=>z.id===zid));
-  const aid=allAssignedZoneIds(type);
-  for(const z of S.zones)if(!aid.has(z.id))addZ(z);
-  return [...out.values()];
-}
-
-// Main calc: everything assigned to main + anything still unassigned
+// Main calc — MAIN 담당 전체 기구수로 계수 적용 (미배정 존 포함)
 function calcMainType(type){
   const main=S[type].main;
-  let cwQ=0,hwQ=0,sD=0,wD=0;
-  for(const rid of main.riserIds){const r=S[type].risers.find(r=>r.id===rid);if(r){const res=calcRiser(r,type);cwQ+=res.cwQ;hwQ+=res.hwQ;sD+=res.sewDFU;wD+=res.wstDFU;}}
-  for(const fid of main.floorIds){const f=S[type].floors.find(f=>f.id===fid);if(f){const res=calcFloor(f,type);cwQ+=res.cwQ;hwQ+=res.hwQ;sD+=res.sewDFU;wD+=res.wstDFU;}}
-  for(const zid of main.zoneIds){const z=S.zones.find(z=>z.id===zid);if(z){const res=calcZone(z);cwQ+=res.cwQ;if(!z.elecHW)hwQ+=res.hwQ;sD+=res.sewDFU;wD+=res.wstDFU;}}
+  const a=newAcc();
+  for(const rid of main.riserIds){const r=S[type].risers.find(r=>r.id===rid);if(r)accAdd(a,calcRiser(r,type),false);}
+  for(const fid of main.floorIds){const f=S[type].floors.find(f=>f.id===fid);if(f)accAdd(a,calcFloor(f,type),false);}
+  for(const zid of main.zoneIds){const z=S.zones.find(z=>z.id===zid);if(z)accAdd(a,calcZone(z),z.elecHW);}
   // include still-unassigned zones
   const aid=allAssignedZoneIds(type);
-  for(const z of S.zones){if(!aid.has(z.id)){const r=calcZone(z);cwQ+=r.cwQ;if(!z.elecHW)hwQ+=r.hwQ;sD+=r.sewDFU;wD+=r.wstDFU;}}
-  // 급수·급탕 동시사용률
-  let cwF=0.85,hwF=0.85,cwCnt=null,hwCnt=null;
-  if(S.cwSimultMode==='legacy'){
-    cwQ*=0.85; hwQ*=0.85; // 기존 방식: 메인만 고정 0.85
-  } else {
-    // 기구수 곡선: 원시 합계 × 전체 기구수 계수 (입상관 계수와 중복 적용 방지)
-    let rawCw=0,rawHw=0; cwCnt=0; hwCnt=0;
-    for(const z of mainMemberZones(type)){
-      const r=calcZone(z); rawCw+=r.cwQ; if(!z.elecHW)rawHw+=r.hwQ;
-      const t=zoneFxTotals(z);
-      for(const k of FX_KEYS){
-        const n=t[k]||0; if(!n)continue;
-        if(FX[k].cwQ>0)cwCnt+=n;
-        if(FX[k].hot&&!z.elecHW)hwCnt+=n;
-      }
-    }
-    cwF=cwSimult(cwCnt); hwF=cwSimult(hwCnt);
-    cwQ=rawCw*cwF; hwQ=rawHw*hwF;
+  for(const z of S.zones) if(!aid.has(z.id)) accAdd(a,calcZone(z),z.elecHW);
+  const r=accResult(a);
+  if(S.cwSimultMode==='legacy'){ // 기존 방식: 메인에서만 고정 0.85
+    r.cwQ=(a.fvCw+a.genCw)*0.85; r.hwQ=(a.fvHw+a.genHw)*0.85;
+    r.cwSimultF=0.85; r.hwSimultF=0.85;
+    r.cwPipe=r.cwQ>0?Math.max(flowPipe(r.cwQ),a.mCw):0;
+    r.hwPipe=r.hwQ>0?Math.max(flowPipe(r.hwQ),a.mHw):0;
   }
-  const sp=sD>0?Math.max(sewPipe(sD),100):0;
-  const wp=wD>0?Math.max(wstPipe(wD),50):0;
-  return {cwQ,hwQ,sewDFU:sD,wstDFU:wD,
-    cwPipe:flowPipe(cwQ),hwPipe:flowPipe(hwQ),
-    sewPipe:sp, wstPipe:wp,
-    sewVent:ventPipe(sD,sp), wstVent:ventPipe(wD,wp),
-    cwSimultF:cwF,hwSimultF:hwF,cwCnt,hwCnt};
+  return r;
 }
 
 // ── Pipe layout constants ──────────────────────────────────────────────────────
@@ -593,7 +533,7 @@ const S={
   projectName:'새 프로젝트',
   zones:[],
   mainLocation:'bottom', // 'bottom'|'top'
-  cwSimultMode:'curve',  // 'curve'(기구수 곡선)|'legacy'(메인 0.85 고정)
+  cwSimultMode:'curve',  // 'curve'(동시사용계수표)|'legacy'(메인 0.85 고정)
   cw:{floors:[],risers:[],main:{riserIds:[],floorIds:[],zoneIds:[]}},
   dr:{floors:[],risers:[],main:{riserIds:[],floorIds:[],zoneIds:[]}},
   pressure:{supplyKPa:250,floorH:3.0,material:'stainless',mainLen:10,branchLen:8,zoneLen:3,minResidualKPa:70}
@@ -1201,7 +1141,7 @@ function renderMainPipeTab(){
     <label style="font-size:12px;color:var(--text2)">급수 동시사용률:
       <select style="margin-left:6px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 8px;font-size:12px"
         onchange="S.cwSimultMode=this.value;renderAll()">
-        <option value="curve"${S.cwSimultMode!=='legacy'?' selected':''}>기구수 곡선 (입상관·메인 적용, 권장)</option>
+        <option value="curve"${S.cwSimultMode!=='legacy'?' selected':''}>동시사용계수표 (공조위생 기술데이터북, 권장)</option>
         <option value="legacy"${S.cwSimultMode==='legacy'?' selected':''}>고정 0.85 (메인만, 기존 방식)</option>
       </select>
     </label>
@@ -1299,8 +1239,10 @@ function renderResult(){
     <div class="chip"><span class="chip-lbl">배수 통기&nbsp;</span><span class="chip-val" style="color:var(--drain)">${ps(dm.wstVent||0)}</span></div>
   </div>
   <div style="font-size:10.5px;color:var(--text2);margin-bottom:12px">
-    급수 동시사용률 ${((cm.cwSimultF||0.85)*100).toFixed(0)}%${cm.cwCnt!=null?` (급수기구 ${cm.cwCnt}개)`:' (고정)'} ·
-    급탕 ${((cm.hwSimultF||0.85)*100).toFixed(0)}%${cm.hwCnt!=null?` (온수기구 ${cm.hwCnt}개)`:''} 적용 ·
+    급수 동시사용계수 ${((cm.cwSimultF||0.85)*100).toFixed(1)}%${S.cwSimultMode==='legacy'?' (고정)':
+      ` — 세정밸브 대변기 ${cm.fvCnt}개(${(fvSimult(cm.fvCnt)*100).toFixed(2)}%) + 일반기구 ${cm.genCnt}개(${(genSimult(cm.genCnt)*100).toFixed(2)}%)`} ·
+    급탕 ${((cm.hwSimultF||0.85)*100).toFixed(1)}%${cm.hwCnt!=null?` (온수기구 ${cm.hwCnt}개)`:''} 적용 ·
+    계수표 출처: 공조위생 기술데이터북(한미) — 화장실·층·입상관·MAIN 각 단계에서 그 구간 담당 기구수로 적용 ·
     통기관경은 DFU 개략 + 담당 배수관경의 1/2 이상 기준 (최소 32A)
   </div>
   ${(()=>{
@@ -1624,7 +1566,7 @@ function renderHelp(){
   h+=step(2,'전기온수기 여부','화장실별 전기온수기를 쓰면 체크하세요. 그 존의 온수량이 중앙급탕 관경에서 빠지고, 밸브 산출에 온수기 밸브 세트(차단+체크)가 잡힙니다.');
   h+=step(3,'급수/급탕 연결','<b>② 탭</b>에서 층을 만들어 화장실을 배정하고, 입상관을 만들어 층을 배정합니다. 이 계층이 곧 계통도입니다.');
   h+=step(4,'오배수 연결','<b>③ 탭</b>에서 같은 방식으로 — 급수와 오배수의 계통이 다르면 다르게 구성할 수 있습니다.');
-  h+=step(5,'MAIN관 설정','<b>④ 탭</b>에서 메인관에 포함할 항목을 체크하고 메인관 위치(상향/하향)를 선택합니다. 급수 동시사용률은 <b>기구수 곡선</b>이 기본(권장)이며, 기존 고정 0.85 방식으로 되돌릴 수 있습니다.');
+  h+=step(5,'MAIN관 설정','<b>④ 탭</b>에서 메인관에 포함할 항목을 체크하고 메인관 위치(상향/하향)를 선택합니다. 급수 동시사용계수는 <b>공조위생 기술데이터북(한미) 표</b>가 기본(권장)이며, 기존 고정 0.85 방식으로 되돌릴 수 있습니다.');
   h+=step(6,'압력검토','<b>⑤ 탭</b>에서 공급압력·층고·배관 길이를 입력하면 가장 불리한 경로(임계경로)의 말단 잔압을 검토합니다. 잔압 부족 시 업사이즈를 권장해 줍니다.');
   h+=step(7,'결과 확인','<b>⑥ 탭</b>에서 메인관 관경·통기관·건물 계통도를 확인합니다.');
   h+=step(8,'밸브·부속 산출 → 엑셀','<b>⑦ 탭</b>에서 화장실 말단 밸브(볼·앵글·WHA·온수기 세트·진공브레이커)와 부속(티·엘보·레듀서, 개략)이 자동 산출됩니다. <b>📊 엑셀</b> 버튼으로 관경+밸브+부속 전체를 CSV로 내려받습니다.');
@@ -1653,7 +1595,7 @@ function exportCSV(){
   S.projectName=document.getElementById('projectName').value||S.projectName;
   const rows=[];
   rows.push([S.projectName+' — 위생배관 관경 계산서','출력일 '+new Date().toISOString().slice(0,10),
-    '동시사용률: '+(S.cwSimultMode==='legacy'?'고정 0.85(메인만)':'기구수 곡선(입상관·메인)')]);
+    '동시사용계수: '+(S.cwSimultMode==='legacy'?'고정 0.85(메인만)':'공조위생 기술데이터북 표 — 화장실·층·입상관·메인 각 단계 적용')]);
   rows.push([]);
   rows.push(['[존별 관경]','층','급수 L/min','급수관','급탕 L/min','급탕관','오수 DFU','오수관','잡배수 DFU','잡배수관','기구 구성']);
   for(const z of S.zones){
@@ -1749,29 +1691,21 @@ function exportCSV(){
 }
 
 // ── Schematic cumulative helpers ──────────────────────────────────────────────
+// 계통도 누적 — 원시 합계를 모아 누적 구간의 기구수로 계수 적용 (이중 적용 방지)
 function sumZonesCum(zoneList){
-  let cwQ=0,hwQ=0,sD=0,wD=0;
-  for(const z of zoneList){const r=calcZone(z);cwQ+=r.cwQ;if(!z.elecHW)hwQ+=r.hwQ;sD+=r.sewDFU;wD+=r.wstDFU;}
-  return {cwQ,hwQ,sewDFU:sD,wstDFU:wD,
-    cwPipe:flowPipe(cwQ),hwPipe:flowPipe(hwQ),
-    sewPipe:sD>0?Math.max(sewPipe(sD),100):0,
-    wstPipe:wD>0?Math.max(wstPipe(wD),50):0};
+  const a=newAcc();
+  for(const z of zoneList) accAdd(a,calcZone(z),z.elecHW);
+  return accResult(a);
 }
 function sumFloorsCum(floorList,type){
-  let cwQ=0,hwQ=0,sD=0,wD=0;
-  for(const fl of floorList){const r=calcFloor(fl,type);cwQ+=r.cwQ;hwQ+=r.hwQ;sD+=r.sewDFU;wD+=r.wstDFU;}
-  return {cwQ,hwQ,sewDFU:sD,wstDFU:wD,
-    cwPipe:flowPipe(cwQ),hwPipe:flowPipe(hwQ),
-    sewPipe:sD>0?Math.max(sewPipe(sD),100):0,
-    wstPipe:wD>0?Math.max(wstPipe(wD),50):0};
+  const a=newAcc();
+  for(const fl of floorList) accAdd(a,calcFloor(fl,type),false);
+  return accResult(a);
 }
 function sumRisersCum(riserList,type){
-  let cwQ=0,hwQ=0,sD=0,wD=0;
-  for(const ri of riserList){const r=calcRiser(ri,type);cwQ+=r.cwQ;hwQ+=r.hwQ;sD+=r.sewDFU;wD+=r.wstDFU;}
-  return {cwQ,hwQ,sewDFU:sD,wstDFU:wD,
-    cwPipe:flowPipe(cwQ),hwPipe:flowPipe(hwQ),
-    sewPipe:sD>0?Math.max(sewPipe(sD),100):0,
-    wstPipe:wD>0?Math.max(wstPipe(wD),50):0};
+  const a=newAcc();
+  for(const ri of riserList) accAdd(a,calcRiser(ri,type),false);
+  return accResult(a);
 }
 
 // ── Schematic SVG (건물 수직 계통도) ─────────────────────────────────────────
