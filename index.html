@@ -344,7 +344,23 @@ function pipeToCalcNode(id, nodes){
 }
 
 function calcZone(z){
-  return calcNode(pipeToCalcNode(z.pipe.rootId, z.pipe.nodes));
+  const tree=calcNode(pipeToCalcNode(z.pipe.rootId, z.pipe.nodes));
+  // 존 기구수 기반 동시사용률 적용 (IPC 방식)
+  if(S.cwSimultMode!=='legacy'){
+    let cwCnt=0, hwCnt=0;
+    const t=zoneFxTotals(z);
+    for(const k of FX_KEYS){
+      const n=t[k]||0; if(!n)continue;
+      if(FX[k].cwQ>0) cwCnt+=n;
+      if(FX[k].hot&&!z.elecHW) hwCnt+=n;
+    }
+    const cwF=cwSimult(cwCnt), hwF=cwSimult(hwCnt);
+    tree.cwQ*=cwF; tree.hwQ*=hwF;
+    tree.cwPipe=tree.cwQ>0?Math.max(flowPipe(tree.cwQ),0):0;
+    tree.hwPipe=tree.hwQ>0?Math.max(flowPipe(tree.hwQ),0):0;
+    tree.cwSimultF=cwF; tree.hwSimultF=hwF; tree.cwCnt=cwCnt; tree.hwCnt=hwCnt;
+  }
+  return tree;
 }
 
 function zoneFxTotals(z){
@@ -403,15 +419,32 @@ function ventPipe(dfu,drainD){
   return v;
 }
 
-// ── Floor calc (no simultaneous factor — same floor) ──────────────────────────
+// ── Floor calc (with simultaneous factor for all fixtures) ──────────────────
 function calcFloor(floor, type){
   const zs=floor.zoneIds.map(id=>S.zones.find(z=>z.id===id)).filter(Boolean);
-  let cwQ=0,hwQ=0,sD=0,wD=0;
-  for(const z of zs){const r=calcZone(z);cwQ+=r.cwQ;if(!z.elecHW)hwQ+=r.hwQ;sD+=r.sewDFU;wD+=r.wstDFU;}
+  let cwQ=0,hwQ=0,sD=0,wD=0,cwCnt=0,hwCnt=0,sewCnt=0,wstCnt=0;
+  for(const z of zs){
+    const r=calcZone(z);cwQ+=r.cwQ;if(!z.elecHW)hwQ+=r.hwQ;sD+=r.sewDFU;wD+=r.wstDFU;
+    const t=zoneFxTotals(z);
+    for(const k of FX_KEYS){
+      const n=t[k]||0; if(!n)continue;
+      if(FX[k].drain==='sew')sewCnt+=n; else wstCnt+=n;
+      if(FX[k].cwQ>0)cwCnt+=n;
+      if(FX[k].hot&&!z.elecHW)hwCnt+=n;
+    }
+  }
+  // 오배수 동시사용률
+  const sf=sewSimult(sewCnt),wf=wstSimult(wstCnt);
+  sD*=sf; wD*=wf;
+  // 급수·급탕 동시사용률 (기구수 곡선)
+  let cwF=1,hwF=1;
+  if(S.cwSimultMode!=='legacy'){ cwF=cwSimult(cwCnt); hwF=cwSimult(hwCnt); cwQ*=cwF; hwQ*=hwF; }
+  const sp=sD>0?Math.max(sewPipe(sD),100):0;
+  const wp=wD>0?Math.max(wstPipe(wD),50):0;
   return {cwQ,hwQ,sewDFU:sD,wstDFU:wD,
     cwPipe:flowPipe(cwQ),hwPipe:flowPipe(hwQ),
-    sewPipe:sD>0?Math.max(sewPipe(sD),100):0,
-    wstPipe:wD>0?Math.max(wstPipe(wD),50):0, cnt:zs.length};
+    sewPipe:sp,wstPipe:wp,cnt:zs.length,
+    cwSimultF:cwF,hwSimultF:hwF,cwCnt,hwCnt,sewSimult:sf,wstSimult:wf};
 }
 
 // ── Riser calc (floors + direct zones, with simultaneous factor) ──────────────
