@@ -394,8 +394,9 @@ function simLookup(n,arr){
 }
 function fvSimult(n){ return simLookup(n,SIM_FV); }   // 대변기(세정밸브)
 function genSimult(n){ return simLookup(n,SIM_GEN); } // 일반기구
-// 세정밸브 대변기는 별도 곡선 — 그룹별 유량에 각자의 계수를 적용 후 합산
-const FV_KEYS=['wc_v'];
+// 세정밸브류(대·소변기)는 별도 곡선 — 그룹별 유량에 각자의 계수를 적용 후 합산
+// 소변기 세정밸브도 플러시밸브라 순간유량 특성이 같으므로 대변기와 동일 곡선 적용
+const FV_KEYS=['wc_v','ur_v'];
 function suppSimult(a){
   const rawCw=a.fvCw+a.genCw, rawHw=a.fvHw+a.genHw;
   if(S.cwSimultMode==='legacy') return {cwQ:rawCw,hwQ:rawHw,cwF:1,hwF:1};
@@ -1240,7 +1241,7 @@ function renderResult(){
   </div>
   <div style="font-size:10.5px;color:var(--text2);margin-bottom:12px">
     급수 동시사용계수 ${((cm.cwSimultF||0.85)*100).toFixed(1)}%${S.cwSimultMode==='legacy'?' (고정)':
-      ` — 세정밸브 대변기 ${cm.fvCnt}개(${(fvSimult(cm.fvCnt)*100).toFixed(2)}%) + 일반기구 ${cm.genCnt}개(${(genSimult(cm.genCnt)*100).toFixed(2)}%)`} ·
+      ` — 세정밸브류(대·소변기) ${cm.fvCnt}개(${(fvSimult(cm.fvCnt)*100).toFixed(2)}%) + 일반기구 ${cm.genCnt}개(${(genSimult(cm.genCnt)*100).toFixed(2)}%)`} ·
     급탕 ${((cm.hwSimultF||0.85)*100).toFixed(1)}%${cm.hwCnt!=null?` (온수기구 ${cm.hwCnt}개)`:''} 적용 ·
     계수표 출처: 공조위생 기술데이터북(한미) — 화장실·층·입상관·MAIN 각 단계에서 그 구간 담당 기구수로 적용 ·
     통기관경은 DFU 개략 + 담당 배수관경의 1/2 이상 기준 (최소 32A)
