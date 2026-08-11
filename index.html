@@ -414,7 +414,9 @@ function applyUpsize(r,steps){
 }
 function calcZone(z){
   // 트리의 모든 구간이 각자의 담당 기구수로 계수 적용됨 (루트 = 존 전체)
-  return applyUpsize(calcNode(pipeToCalcNode(z.pipe.rootId, z.pipe.nodes)), z.upsize);
+  const r=applyUpsize(calcNode(pipeToCalcNode(z.pipe.rootId, z.pipe.nodes)), z.upsize);
+  if(z.hwSource==='none'){ r.hwQ=0; r.hwPipe=0; r.hwCnt=0; }   // 기준: HW-001 급탕 없는 존
+  return r;
 }
 
 function zoneFxTotals(z){
@@ -543,6 +545,37 @@ function calcFloor(floor, type){
   return applyUpsize(Object.assign(accResult(a),{cnt:zs.length}), floor.upsize);
 }
 
+// ── 기준: HW-001 · 급탕 열원 그룹 (중앙급탕 + 환탕) ────────────────────────────
+//   급수는 인입 하나에서 건물 전체로 퍼지지만, 급탕은 열원 단위로 계통이 쪼개진다.
+//   보일러 1대가 담당하는 존들을 하나로 묶어 급탕 공급관을 산정하고,
+//   환탕관은 그 계통이 되돌아오는 경로다.
+//
+//   환탕관이 급탕관보다 작은 이유: 환탕관이 나르는 것은 급탕 사용량이 아니라
+//   「순환수량」이고, 순환수량은 배관 열손실을 보충하는 양(= 열손실 ÷ 비열 ÷ 온도강하)으로
+//   정해진다. 통상 온도강하 5℃ 기준이며 급탕 설계유량의 1/5~1/10 수준이다.
+//   정식 산정에는 배관 실장과 보온 두께가 필요한데 이 앱은 배관 길이를 다루지 않으므로
+//   (도면 실측의 영역) 관행식 「급탕관 대비 1단계 축소, 최소 20A」를 쓴다.
+function boilerZones(bid){ return S.zones.filter(z=>z.hwSource===bid); }
+function calcBoiler(bid){
+  const zs=boilerZones(bid);
+  const a=newAcc();
+  for(const z of zs) accAdd(a,calcZone(z),false);   // 이 그룹은 전부 중앙급탕이므로 skipHot=false
+  const r=accResult(a);
+  const sup=r.hwQ>0?r.hwPipe:0;
+  return {id:bid, zones:zs, cnt:zs.length, hwQ:r.hwQ, hwCnt:r.hwCnt,
+          hwSimultF:r.hwSimultF, supply:sup, ret:hwReturnPipe(sup)};
+}
+// 환탕관 — 급탕 공급관에서 S.hwReturnStep 단계 축소, 최소 20A
+function hwReturnPipe(supply){
+  if(!supply) return 0;
+  const n=(S.hwReturnStep==null?1:S.hwReturnStep);
+  let i=PIPE_SIZES_ALL.indexOf(supply);
+  if(i<0) return 0;
+  i=Math.max(0,i-n);
+  return Math.max(PIPE_SIZES_ALL[i],20);
+}
+function usedBoilers(){ return S.boilers.filter(b=>boilerZones(b.id).length>0); }
+
 // ── Riser calc — 입상관 담당 기구수로 계수 적용 ──────────────────────────────
 function calcRiser(riser, type){
   const floors=riser.floorIds.map(id=>S[type].floors.find(f=>f.id===id)).filter(Boolean);
@@ -629,6 +662,7 @@ function newZone(name,floor=''){
   const start=newPipeNode('start');
   return {
     id:uid(), name:name||'Zone 1', floor, elecHW:false,
+    hwSource:(S.boilers&&S.boilers[0])?S.boilers[0].id:'B1',   // 기준: HW-001
     pipe:{nodes:{[start.id]:start}, rootId:start.id}
   };
 }
@@ -642,6 +676,8 @@ const S={
   cwVmax:1.5,            // 급수·급탕 허용유속 상한 m/s (기준: WS-003)
   cw:{floors:[],risers:[],main:{riserIds:[],floorIds:[],zoneIds:[]}},
   dr:{floors:[],risers:[],main:{riserIds:[],floorIds:[],zoneIds:[]}},
+  boilers:[{id:'B1',name:'보일러 B1'}],   // 기준: HW-001 — 중앙급탕 열원 그룹
+  hwReturnStep:1,        // 환탕관 축소 단계 (급탕관 대비), 기준: HW-001
   pressure:{supplyKPa:250,floorH:3.0,material:'stainless',mainLen:10,branchLen:8,zoneLen:3,minResidualKPa:55,fittingFactor:1.3}
 };
 let activeZone=null, activeTab=0;
@@ -686,6 +722,18 @@ function normalizeState(){
   if(S.pressure.zoneLen==null) S.pressure.zoneLen=3;
   if(!S.pressure.material) S.pressure.material='stainless';
   if(S.pressure.fittingFactor==null) S.pressure.fittingFactor=1.3;   // 기준: WS-005
+  // 기준: HW-001 — 급탕 열원 그룹. 구버전의 elecHW(불리언)를 hwSource 로 승격한다.
+  //   elecHW=true  → 'elec' (개별 순간온수기, 환탕 없음)
+  //   elecHW=false → 첫 보일러 그룹 (중앙급탕)
+  if(!Array.isArray(S.boilers)||!S.boilers.length) S.boilers=[{id:'B1',name:'보일러 B1'}];
+  if(S.hwReturnStep==null) S.hwReturnStep=1;
+  for(const z of S.zones){
+    if(!z.hwSource) z.hwSource = z.elecHW ? 'elec' : S.boilers[0].id;
+    // 존재하지 않는 보일러를 가리키면 첫 보일러로 되돌린다
+    if(z.hwSource!=='elec'&&z.hwSource!=='none'&&!S.boilers.some(b=>b.id===z.hwSource))
+      z.hwSource=S.boilers[0].id;
+    z.elecHW = (z.hwSource!=='none' && z.hwSource!=='elec') ? false : true;  // 기존 로직 호환
+  }
   let mx=0;
   const scanId=o=>{if(o&&o.id){const n=parseInt(o.id.slice(1));if(!isNaN(n)&&n>mx)mx=n;}};
   S.zones.forEach(z=>{scanId(z);if(z.pipe)Object.values(z.pipe.nodes).forEach(scanId);});
@@ -988,9 +1036,15 @@ function renderEditor(){
     <div class="zone-editor-row">
       <input class="zone-name-inp" value="${esc(zone.name)}" onchange="setZoneName('${zone.id}',this.value)" placeholder="Zone 이름">
       <input class="zone-name-inp" style="width:100px;font-size:13px;font-weight:400" value="${esc(zone.floor)}" placeholder="층 입력(예:1층)" onchange="setZoneFloor('${zone.id}',this.value)">
-      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);cursor:pointer;white-space:nowrap">
-        <input type="checkbox" ${zone.elecHW?'checked':''} onchange="setZoneElecHW('${zone.id}',this.checked)">
-        개별전기온수기 사용 <span style="color:var(--text3);font-size:11px">(체크 시 급탕관 누적 제외)</span>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);white-space:nowrap">
+        급탕 열원:
+        <select style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 8px;font-size:12px"
+          onchange="setZoneHwSource('${zone.id}',this.value)">
+          <option value="none"${zone.hwSource==='none'?' selected':''}>급탕 없음</option>
+          <option value="elec"${zone.hwSource==='elec'?' selected':''}>개별 순간온수기 (환탕 없음)</option>
+          ${S.boilers.map(b=>`<option value="${b.id}"${zone.hwSource===b.id?' selected':''}>${esc(b.name)} (중앙급탕)</option>`).join('')}
+        </select>
+        <span style="color:var(--text3);font-size:11px">${zone.hwSource==='elec'?'급탕관 누적 제외 · 온수기 밸브세트 산출':zone.hwSource==='none'?'급탕 계산 제외':'그 열원으로 합산 · 환탕관 산정'}</span>
       </label>
     </div>
     <div class="zone-chips" id="zone-chips-${zone.id}">${chipsHTML(r)}</div>
@@ -1266,6 +1320,7 @@ function renderMainPipeTab(){
       </select>
     </label>
   </div>`;
+  h+=hwSourcePanel();
 
   for(const type of ['cw','dr']){
     const isCW=type==='cw';
@@ -1711,6 +1766,66 @@ function renderHelp(){
   h+=basisGuide();
   h+=`</div>`;
   el.innerHTML=h;
+}
+
+// ── 기준: HW-001 · 급탕 열원 그룹 패널 (④ MAIN관 탭) ──────────────────────────
+function hwSourcePanel(){
+  const elecZ=S.zones.filter(z=>z.hwSource==='elec');
+  const noneZ=S.zones.filter(z=>z.hwSource==='none');
+  let h=`<div class="section"><div class="fr" style="align-items:center;gap:12px;margin-bottom:8px">
+    <span class="section-title" style="margin:0">급탕 열원 (중앙급탕 · 환탕)</span>
+    <button class="btn btn-sm" onclick="addBoiler()">+ 열원 추가</button>
+    <label style="font-size:11.5px;color:var(--text2)">환탕관 축소:
+      <select style="margin-left:4px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-size:11.5px"
+        onchange="S.hwReturnStep=+this.value;renderAll()">
+        <option value="1"${(S.hwReturnStep??1)===1?' selected':''}>급탕관 −1단계 (권장)</option>
+        <option value="2"${(S.hwReturnStep??1)===2?' selected':''}>급탕관 −2단계</option>
+        <option value="0"${(S.hwReturnStep??1)===0?' selected':''}>급탕관과 동일</option>
+      </select>
+    </label>
+  </div>`;
+  h+=`<table style="width:100%;border-collapse:collapse;font-size:11.5px">
+    <tr style="color:var(--text3)">
+      <th style="padding:4px 6px;text-align:left;border-bottom:1.5px solid var(--border)">열원</th>
+      <th style="padding:4px 6px;text-align:right;border-bottom:1.5px solid var(--border)">화장실</th>
+      <th style="padding:4px 6px;text-align:right;border-bottom:1.5px solid var(--border)">급탕 유량</th>
+      <th style="padding:4px 6px;text-align:right;border-bottom:1.5px solid var(--border)">동시사용</th>
+      <th style="padding:4px 6px;text-align:right;border-bottom:1.5px solid var(--border)">급탕 공급관</th>
+      <th style="padding:4px 6px;text-align:right;border-bottom:1.5px solid var(--border)">환탕관</th>
+      <th style="padding:4px 6px;border-bottom:1.5px solid var(--border)"></th>
+    </tr>`;
+  for(const b of S.boilers){
+    const r=calcBoiler(b.id);
+    const zoneNames=r.zones.map(z=>z.name).join(', ')||'—';
+    h+=`<tr>
+      <td style="padding:4px 6px;border-bottom:1px solid var(--border)">
+        <input value="${esc(b.name)}" onchange="setBoilerName('${b.id}',this.value)"
+          style="width:110px;background:transparent;border:none;border-bottom:1px dashed var(--border);color:var(--text);font-size:11.5px;padding:1px 2px">
+        <div style="font-size:10px;color:var(--text3);margin-top:2px">${esc(zoneNames)}</div></td>
+      <td style="padding:4px 6px;text-align:right;border-bottom:1px solid var(--border)">${r.cnt}개</td>
+      <td style="padding:4px 6px;text-align:right;border-bottom:1px solid var(--border)">${r.hwQ.toFixed(1)} L/min</td>
+      <td style="padding:4px 6px;text-align:right;border-bottom:1px solid var(--border);color:var(--text2)">${r.hwQ>0?((r.hwSimultF||1)*100).toFixed(1)+'%':'—'}</td>
+      <td style="padding:4px 6px;text-align:right;border-bottom:1px solid var(--border);font-weight:700;color:var(--hw,#e0a85c)">${r.supply?r.supply+'A':'—'}</td>
+      <td style="padding:4px 6px;text-align:right;border-bottom:1px solid var(--border);font-weight:700;color:var(--accent2)">${r.ret?r.ret+'A':'—'}</td>
+      <td style="padding:4px 6px;text-align:right;border-bottom:1px solid var(--border)">
+        <button class="btn btn-danger btn-sm" onclick="delBoiler('${b.id}')">삭제</button></td>
+    </tr>`;
+  }
+  h+=`</table>`;
+  if(elecZ.length||noneZ.length){
+    h+=`<div style="font-size:11px;color:var(--text2);margin-top:8px;line-height:1.7">
+      ${elecZ.length?`<b>개별 순간온수기</b> ${elecZ.length}개소 — ${esc(elecZ.map(z=>z.name).join(', '))} <span style="color:var(--text3)">(중앙급탕 누적 제외 · 환탕관 없음)</span><br>`:''}
+      ${noneZ.length?`<b>급탕 없음</b> ${noneZ.length}개소 — ${esc(noneZ.map(z=>z.name).join(', '))}`:''}
+    </div>`;
+  }
+  h+=`<div style="font-size:10.5px;color:var(--text3);margin-top:8px;line-height:1.6;padding:8px;background:var(--surface2);border-radius:6px">
+    ※ 열원 지정은 <b>① 개별 화장실</b> 탭의 각 화장실에서 선택합니다.<br>
+    ※ 환탕관이 급탕관보다 작은 이유 — 환탕관이 나르는 것은 급탕 사용량이 아니라
+       <b>배관 열손실을 보충하는 순환수량</b>(통상 온도강하 5℃ 기준)이며, 급탕 설계유량의 1/5~1/10 수준입니다.<br>
+    ※ 정식 순환수량 산정에는 <b>배관 실장·보온 두께</b>가 필요합니다. 이 앱은 배관 길이를 다루지 않으므로
+       관행식(급탕관 −${S.hwReturnStep??1}단계, 최소 20A)을 적용합니다. 실시설계 시 별도 검토하십시오.
+  </div></div>`;
+  return h;
 }
 
 // ── 산정 근거와 계산 방법 (발주처 검토용 · 학습용) ─────────────────────────────
@@ -2245,6 +2360,30 @@ function selZone(id){activeZone=id;renderSidebar();renderEditor();}
 function setZoneName(id,v){const z=findZone(id);if(z){z.name=v;renderSidebar();}}
 function setZoneFloor(id,v){const z=findZone(id);if(z){z.floor=v;renderSidebar();}}
 function setZoneElecHW(id,v){const z=findZone(id);if(z){z.elecHW=v;renderEditor();}}
+// 기준: HW-001 — 존의 급탕 열원 지정. elecHW 는 기존 계산 로직 호환용으로 함께 갱신한다.
+function setZoneHwSource(id,v){
+  const z=findZone(id); if(!z) return;
+  z.hwSource=v;
+  z.elecHW=(v==='elec'||v==='none');
+  renderAll();
+}
+// ── 보일러(열원) 관리 ──────────────────────────────────────────────────────────
+function addBoiler(){
+  const n=S.boilers.length+1;
+  let id='B'+n, k=n;
+  while(S.boilers.some(b=>b.id===id)){ k++; id='B'+k; }
+  S.boilers.push({id,name:'보일러 '+id});
+  renderAll();
+}
+function setBoilerName(id,v){const b=S.boilers.find(b=>b.id===id);if(b){b.name=v;persist();}}
+function delBoiler(id){
+  if(S.boilers.length<=1){alert('열원은 최소 1개가 있어야 합니다.');return;}
+  const used=boilerZones(id);
+  if(used.length&&!confirm(`이 열원에 ${used.length}개 화장실이 묶여 있습니다.\n삭제하면 첫 번째 열원으로 옮겨집니다. 계속할까요?`)) return;
+  S.boilers=S.boilers.filter(b=>b.id!==id);
+  for(const z of used) z.hwSource=S.boilers[0].id;
+  renderAll();
+}
 
 // ── Floor actions ──────────────────────────────────────────────────────────────
 function addFloor(type){
