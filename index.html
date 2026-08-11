@@ -270,20 +270,35 @@ const FX = {
 };
 
 // ── Pipe tables ────────────────────────────────────────────────────────────────
-// 기준: WS-003 — 전제 허용유속 미확인(볼트 status: 미검증)
+// 기준: WS-003 — 급수·급탕 관경.
+//   ① 유량 구간표로 1차 선정 — 이 표는 마찰손실 기준(전 구간 약 19~29 mmAq/m)이다.
+//   ② 유속 상한 검사 — 표가 마찰손실 기준이라 대구경에서 유속이 상한을 넘는다.
+//      (125A 구간 상한 1,200 L/min 에서 1.59 m/s → 통용 기준 1.5 m/s 초과)
+//   두 조건을 모두 만족시킨다. 배수의 「합계 + 1개 층당」과 같은 구조.
+const PIPE_ID={15:16.1,20:21.6,25:27.2,32:35.5,40:41.2,50:52.7,   // 배관용탄소강관 KS D 3507 내경
+               65:65.9,80:78.1,100:102.3,125:126.6,150:151.0};
+function pipeVelocity(q_Lmin,d){
+  const D=(PIPE_ID[d]||d)/1000;
+  if(!q_Lmin||!D) return 0;
+  return (q_Lmin/60000)/(Math.PI*D*D/4);   // m/s
+}
 function flowPipe(q){
   if(q<=0)    return 0;
-  if(q<=6.7)  return 15;
-  if(q<=13.8) return 20;
-  if(q<=25.5) return 25;
-  if(q<=48)   return 32;
-  if(q<=69)   return 40;
-  if(q<=129)  return 50;
-  if(q<=232)  return 65;
-  if(q<=360)  return 80;
-  if(q<=700)  return 100;
-  if(q<=1200) return 125;
-  return 150;
+  let d;
+  if(q<=6.7)       d=15;
+  else if(q<=13.8) d=20;
+  else if(q<=25.5) d=25;
+  else if(q<=48)   d=32;
+  else if(q<=69)   d=40;
+  else if(q<=129)  d=50;
+  else if(q<=232)  d=65;
+  else if(q<=360)  d=80;
+  else if(q<=700)  d=100;
+  else if(q<=1200) d=125;
+  else             d=150;
+  const vmax=(typeof S!=='undefined'&&S.cwVmax)?S.cwVmax:1.5;
+  while(pipeVelocity(q,d)>vmax){ const n=pipeNextSize(d); if(n===d) break; d=n; }
+  return d;
 }
 // 기준: DR-003 — KDS 31 30 25 표 4.1-5 (배수 수평지관과 수직관)
 //   [호칭경, 수평지관, 수직관 분기층3이하, 수직관 분기층3초과 합계, 1개 분기층당]
@@ -596,6 +611,7 @@ const S={
   mainLocation:'bottom', // 'bottom'|'top'
   cwSimultMode:'curve',  // 'curve'(동시사용계수표)|'legacy'(메인 0.85 고정)
   drSlope:1,             // 건물배수 수평주관 구배 — DR_SLOPES 인덱스 (1 = 1/100)
+  cwVmax:1.5,            // 급수·급탕 허용유속 상한 m/s (기준: WS-003)
   cw:{floors:[],risers:[],main:{riserIds:[],floorIds:[],zoneIds:[]}},
   dr:{floors:[],risers:[],main:{riserIds:[],floorIds:[],zoneIds:[]}},
   pressure:{supplyKPa:250,floorH:3.0,material:'stainless',mainLen:10,branchLen:8,zoneLen:3,minResidualKPa:70}
@@ -1205,6 +1221,13 @@ function renderMainPipeTab(){
         onchange="S.cwSimultMode=this.value;renderAll()">
         <option value="curve"${S.cwSimultMode!=='legacy'?' selected':''}>동시사용계수표 (공조위생 기술데이터북, 권장)</option>
         <option value="legacy"${S.cwSimultMode==='legacy'?' selected':''}>고정 0.85 (메인만, 기존 방식)</option>
+      </select>
+    </label>
+    <label style="font-size:12px;color:var(--text2)">급수 허용유속:
+      <select style="margin-left:6px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 8px;font-size:12px"
+        onchange="S.cwVmax=+this.value;renderAll()">
+        ${[[1.5,'1.5 m/s (권장)'],[2.0,'2.0 m/s (허용 상한)'],[2.5,'2.5 m/s (검사 사실상 해제)']]
+          .map(([v,l])=>`<option value="${v}"${(S.cwVmax||1.5)===v?' selected':''}>${l}</option>`).join('')}
       </select>
     </label>
     <label style="font-size:12px;color:var(--text2)">배수 MAIN 구배:
@@ -2659,7 +2682,9 @@ function _printPDF(){
       ? '<b>고정 0.85</b> (MAIN 단계만)'
       : '<b>동시사용계수표</b> (공조위생 기술데이터북) — 화장실·층·입상관·MAIN 각 단계 적용';
     return `<div class="basis-box"><b>산정 기준</b> |
-      급수·급탕: <b>기구 순간유량 합산 → 동시사용계수 적용 → 유량 구간표</b>로 관경 결정.
+      급수·급탕: <b>기구 순간유량 합산 → 동시사용계수 적용 → 유량 구간표</b>로 관경 결정
+      (구간표는 마찰손실 기준, 약 19~29 mmAq/m). 추가로 <b>허용유속 ${S.cwVmax||1.5} m/s</b> 검사를 걸어
+      초과 시 한 단계 상향 (내경은 KS D 3507 배관용탄소강관 기준).
       동시사용계수 ${sm} |
       오배수: <b>기구배수부하단위(DFU) 합계</b>로 관경 결정 (KDS 31 30 25 배수통기설비, 4.1.4·4.1.5).
       DFU 는 사용빈도·동시사용 확률이 이미 반영된 단위이므로 <b>동시사용률을 별도로 곱하지 않음</b>.
