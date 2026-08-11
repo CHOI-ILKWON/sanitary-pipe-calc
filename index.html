@@ -376,15 +376,12 @@ function zoneFxSummaryCard(z){
 }
 
 // ── Simultaneous use factors ───────────────────────────────────────────────────
-// 기준: DR-002 — DFU에 동시사용률을 또 곱하는 것이 맞는지 검토 중(볼트 status: 미검증)
-function sewSimult(cnt){
-  if(cnt<=2)  return 1.0; if(cnt<=5)  return 0.8; if(cnt<=10) return 0.7;
-  if(cnt<=20) return 0.6; if(cnt<=30) return 0.55; return 0.5;
-}
-function wstSimult(cnt){
-  if(cnt<=3) return 1.0; if(cnt<=6) return 0.8; if(cnt<=10) return 0.7;
-  if(cnt<=20) return 0.65; return 0.6;
-}
+// 기준: DR-002 — 배수는 동시사용률을 곱하지 않는다.
+//   기구배수부하단위(DFU)는 사용 빈도·지속시간·동시사용 확률까지 이미 환산한 값이고,
+//   관경표(KDS 31 30 25 표 4.1-4·4.1-5)가 그 DFU 단위로 만들어져 있다.
+//   여기에 계수를 또 곱하면 감소가 두 번 적용되어 관경이 과소 산정된다.
+//   (2026-08-11 이전에는 sewSimult()/wstSimult() 로 0.5~1.0 을 곱하고 있었다 — 제거함)
+// 급수는 순간유량(L/min) 을 직접 합산하는 방식이라 동시사용계수가 필요하다 → WS-002
 // 기준: WS-002
 // 급수·급탕 동시사용계수 — 공조위생 기술데이터북(한미) 자료
 // 기구수 구간은 계단식: 표에 없는 수는 바로 아래 구간값을 따름 (예: 25~31 → 24 기준)
@@ -422,14 +419,13 @@ function accAdd(a,r,skipHot){
 }
 function accResult(a){
   const s=suppSimult(a);
-  const sf=sewSimult(a.sewCnt), wf=wstSimult(a.wstCnt);
-  const sD=a.sewRaw*sf, wD=a.wstRaw*wf;
+  const sD=a.sewRaw, wD=a.wstRaw;          // 기준: DR-002 — DFU 합계를 그대로 쓴다
   const sp=sD>0?Math.max(sewPipe(sD),a.mSew,100):0;
   const wp=wD>0?Math.max(wstPipe(wD),a.mWst,50):0;
   return Object.assign({},a,{
     cwQ:s.cwQ, hwQ:s.hwQ, cwSimultF:s.cwF, hwSimultF:s.hwF,
     cwCnt:a.fvCnt+a.genCnt, hwCnt:a.hwFvCnt+a.hwGenCnt,
-    sewDFU:sD, wstDFU:wD, sewSimult:sf, wstSimult:wf,
+    sewDFU:sD, wstDFU:wD,
     cwPipe:s.cwQ>0?Math.max(flowPipe(s.cwQ),a.mCw):0,
     hwPipe:s.hwQ>0?Math.max(flowPipe(s.hwQ),a.mHw):0,
     sewPipe:sp, wstPipe:wp,
@@ -1097,10 +1093,9 @@ function connMain(elId,type){
             ${isCW
               ?`<span class="badge badge-cw">${ps(rr.cwPipe)} · ${rr.cwQ.toFixed(1)}L/min</span>
                 <span class="badge badge-hw">${ps(rr.hwPipe)} · ${rr.hwQ.toFixed(1)}L/min</span>
-                ${rr.cnt>=2?`<span class="badge badge-na">동시사용율 90%</span>`:''}`
+                ${rr.cnt>=2?`<span class="badge badge-na">동시사용계수 ${((rr.cwSimultF||1)*100).toFixed(0)}%</span>`:''}`
               :`<span class="badge badge-sew">${ps(rr.sewPipe)} · ${rr.sewDFU.toFixed(1)}DFU</span>
-                <span class="badge badge-wst">${ps(rr.wstPipe)} · ${rr.wstDFU.toFixed(1)}DFU</span>
-                <span class="badge badge-na">오수 ${((rr.sewSimult||1)*100).toFixed(0)}% / 배수 ${((rr.wstSimult||1)*100).toFixed(0)}%</span>`
+                <span class="badge badge-wst">${ps(rr.wstPipe)} · ${rr.wstDFU.toFixed(1)}DFU</span>`
             }
           </div>
           <button class="btn btn-danger btn-sm ml" onclick="delRiser('${type}','${ri.id}')">삭제</button>
@@ -1632,11 +1627,10 @@ function exportCSV(){
   }
   if(S.dr.risers.length){
     rows.push([]);
-    rows.push(['[오배수 입상관]','오수 DFU','오수관','오수 통기','잡배수 DFU','잡배수관','잡배수 통기','오수 동시율','잡배수 동시율']);
+    rows.push(['[오배수 입상관]','오수 DFU','오수관','오수 통기','잡배수 DFU','잡배수관','잡배수 통기']);
     for(const ri of S.dr.risers){const r=calcRiser(ri,'dr');
       rows.push([ri.name,r.sewDFU.toFixed(1),ps(r.sewPipe),ps(r.sewVent||0),
-        r.wstDFU.toFixed(1),ps(r.wstPipe),ps(r.wstVent||0),
-        (r.sewSimult*100).toFixed(0)+'%',(r.wstSimult*100).toFixed(0)+'%']);}
+        r.wstDFU.toFixed(1),ps(r.wstPipe),ps(r.wstVent||0)]);}
   }
   const cm=calcMainType('cw'),dm=calcMainType('dr');
   rows.push([]);
@@ -2593,10 +2587,15 @@ function _printPDF(){
     </div>`;
   }
   function basis(){
+    const sm=S.cwSimultMode==='legacy'
+      ? '<b>고정 0.85</b> (MAIN 단계만)'
+      : '<b>동시사용계수표</b> (공조위생 기술데이터북) — 화장실·층·입상관·MAIN 각 단계 적용';
     return `<div class="basis-box"><b>산정 기준</b> |
-      급수·급탕: <b>기구급수 부하단위법</b> (Hunter's Curve, KS B 6301) |
-      오배수: <b>DFU</b> (KS B 6301·건축기계설비 설계기준) |
-      동시사용률: 급수·급탕 <b>MAIN 0.85</b> / 오배수 기구수별 계수 |
+      급수·급탕: <b>기구 순간유량 합산 → 동시사용계수 적용 → 유량 구간표</b>로 관경 결정.
+      동시사용계수 ${sm} |
+      오배수: <b>기구배수부하단위(DFU) 합계</b>로 관경 결정 (KDS 31 30 25 배수통기설비, 4.1.5).
+      DFU 는 사용빈도·동시사용 확률이 이미 반영된 단위이므로 <b>동시사용률을 별도로 곱하지 않음</b> |
+      통기: DFU 개략표 + 담당 배수관경의 1/2 이상, 최소 32A |
       압력손실: <b>Hazen-Williams</b> (PVC C=150, 동관 C=130, STS C=140)
     </div>`;
   }
@@ -2686,8 +2685,8 @@ function _printPDF(){
     ${hdr('급수·급탕 계통도')}
     ${basis()}
     <div class="main-sum">
-      <div class="result-card"><div class="lbl">급수 MAIN관</div><div class="val cw-color">${cm.cwPipe?cm.cwPipe+'A':'N/A'}</div><div class="sub">${cm.cwQ.toFixed(1)} L/min × 동시사용률 0.85</div></div>
-      <div class="result-card"><div class="lbl">급탕 MAIN관</div><div class="val hw-color">${cm.hwPipe?cm.hwPipe+'A':'N/A'}</div><div class="sub">${cm.hwQ.toFixed(1)} L/min × 동시사용률 0.85</div></div>
+      <div class="result-card"><div class="lbl">급수 MAIN관</div><div class="val cw-color">${cm.cwPipe?cm.cwPipe+'A':'N/A'}</div><div class="sub">${cm.cwQ.toFixed(1)} L/min (동시사용계수 ${((cm.cwSimultF||1)*100).toFixed(1)}% 적용 후)</div></div>
+      <div class="result-card"><div class="lbl">급탕 MAIN관</div><div class="val hw-color">${cm.hwPipe?cm.hwPipe+'A':'N/A'}</div><div class="sub">${cm.hwQ.toFixed(1)} L/min (동시사용계수 ${((cm.hwSimultF||1)*100).toFixed(1)}% 적용 후)</div></div>
     </div>
     <div class="schematic-page">${cwSvgScaled}</div>
     ${footer()}
