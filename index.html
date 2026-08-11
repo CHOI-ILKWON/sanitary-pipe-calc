@@ -257,19 +257,20 @@ const FX_KEYS = ['wc_v','wc_t','ur_v','ur_t','bas_p','bas_i','shw','bath','sink'
 //   원표는 L/s 이므로 ×60 하여 L/min 으로 환산했다.
 // 기준: DR-001 (dfu·drain·dc) — KDS 31 30 25 표 4.1-2 「기구배수부하단위」
 //   dc(기구배수관경)는 KDS 최소값 이상으로 국내 실무 관행값을 쓴 항목이 있다(볼트 DR-001 참조).
+//   minKPa = 그 기구가 요구하는 최저 급수압력(KDS 표 4.3-1). 압력검토의 말단 잔압 기준이 된다.
 const FX = {
-  wc_v:  {name:'대변기(세정밸브)', cwQ:96, conn:25, hot:false, dfu:4,  drain:'sew', dc:100},
-  wc_t:  {name:'대변기(세정탱크)', cwQ:11, conn:15, hot:false, dfu:4,  drain:'sew', dc:100},
-  ur_v:  {name:'소변기(세정밸브)', cwQ:45, conn:20, hot:false, dfu:4,  drain:'sew', dc:75},
-  ur_t:  {name:'소변기(세정탱크)', cwQ:6,  conn:15, hot:false, dfu:4,  drain:'sew', dc:75},
-  bas_p: {name:'세면기(공중용)',   cwQ:6,  conn:15, hot:true,  dfu:1,  drain:'wst', dc:40},
-  bas_i: {name:'세면기(개인용)',   cwQ:6,  conn:15, hot:true,  dfu:1,  drain:'wst', dc:40},
-  shw:   {name:'샤워기',           cwQ:11, conn:15, hot:true,  dfu:2,  drain:'wst', dc:50},
-  bath:  {name:'욕조',             cwQ:15, conn:20, hot:true,  dfu:2,  drain:'wst', dc:40},
-  sink:  {name:'주방싱크',         cwQ:9,  conn:15, hot:true,  dfu:2,  drain:'wst', dc:50},
-  cls:   {name:'청소싱크',         cwQ:11, conn:20, hot:false, dfu:3,  drain:'wst', dc:75},
-  fd:    {name:'FD(배수구)',        cwQ:0,  conn:0,  hot:false, dfu:1,  drain:'wst', dc:50},
-  wsh:   {name:'세탁기',           cwQ:8,  conn:15, hot:false, dfu:3,  drain:'wst', dc:50},
+  wc_v:  {name:'대변기(세정밸브)', cwQ:96, conn:25, hot:false, dfu:4,  drain:'sew', dc:100, minKPa:100},
+  wc_t:  {name:'대변기(세정탱크)', cwQ:11, conn:15, hot:false, dfu:4,  drain:'sew', dc:100, minKPa:55},
+  ur_v:  {name:'소변기(세정밸브)', cwQ:45, conn:20, hot:false, dfu:4,  drain:'sew', dc:75,  minKPa:100},
+  ur_t:  {name:'소변기(세정탱크)', cwQ:6,  conn:15, hot:false, dfu:4,  drain:'sew', dc:75,  minKPa:55},
+  bas_p: {name:'세면기(공중용)',   cwQ:6,  conn:15, hot:true,  dfu:1,  drain:'wst', dc:40,  minKPa:55},
+  bas_i: {name:'세면기(개인용)',   cwQ:6,  conn:15, hot:true,  dfu:1,  drain:'wst', dc:40,  minKPa:55},
+  shw:   {name:'샤워기',           cwQ:11, conn:15, hot:true,  dfu:2,  drain:'wst', dc:50,  minKPa:70},
+  bath:  {name:'욕조',             cwQ:15, conn:20, hot:true,  dfu:2,  drain:'wst', dc:40,  minKPa:55},
+  sink:  {name:'주방싱크',         cwQ:9,  conn:15, hot:true,  dfu:2,  drain:'wst', dc:50,  minKPa:55},
+  cls:   {name:'청소싱크',         cwQ:11, conn:20, hot:false, dfu:3,  drain:'wst', dc:75,  minKPa:55},
+  fd:    {name:'FD(배수구)',        cwQ:0,  conn:0,  hot:false, dfu:1,  drain:'wst', dc:50,  minKPa:0},
+  wsh:   {name:'세탁기',           cwQ:8,  conn:15, hot:false, dfu:3,  drain:'wst', dc:50,  minKPa:55},
 };
 
 // ── Pipe tables ────────────────────────────────────────────────────────────────
@@ -370,6 +371,7 @@ function calcNode(node){
     if(f.cwQ>0){
       if(isFV){a.fvCw+=f.cwQ*n; a.fvCnt+=n;} else {a.genCw+=f.cwQ*n; a.genCnt+=n;}
       a.mCw=Math.max(a.mCw,f.conn);
+      a.mKPa=Math.max(a.mKPa,f.minKPa||0);   // 기준: WS-005 — 그 구간이 만족시켜야 할 최저 잔압
       if(f.hot){
         if(isFV){a.fvHw+=f.cwQ*n; a.hwFvCnt+=n;} else {a.genHw+=f.cwQ*n; a.hwGenCnt+=n;}
         a.mHw=Math.max(a.mHw,f.conn);
@@ -398,9 +400,21 @@ function pipeToCalcNode(id, nodes){
   return {id:n.id, fixtures, children};
 }
 
+// 기준: WS-005 — 압력검토에서 확정된 상향 단계를 급수·급탕 관경에 반영한다.
+//   관경↔압력은 순환 관계다(잔압 부족 → 관경 상향 → 유속·마찰 재계산 → 잔압 재확인).
+//   상향분은 존·층·입상관·MAIN 각 객체의 upsize 에 저장되고 여기서 적용된다.
+//   배수는 압력과 무관하므로 건드리지 않는다.
+function applyUpsize(r,steps){
+  const n=+steps||0; if(n<=0) return r;
+  const up=d=>{let x=d;for(let i=0;i<n;i++){const y=pipeNextSize(x);if(y===x)break;x=y;}return x;};
+  if(r.cwPipe) r.cwPipe=up(r.cwPipe);
+  if(r.hwPipe) r.hwPipe=up(r.hwPipe);
+  r.upsizeSteps=n;
+  return r;
+}
 function calcZone(z){
   // 트리의 모든 구간이 각자의 담당 기구수로 계수 적용됨 (루트 = 존 전체)
-  return calcNode(pipeToCalcNode(z.pipe.rootId, z.pipe.nodes));
+  return applyUpsize(calcNode(pipeToCalcNode(z.pipe.rootId, z.pipe.nodes)), z.upsize);
 }
 
 function zoneFxTotals(z){
@@ -465,12 +479,13 @@ function suppSimult(a){
 // ── 계층 누적기: 각 단계는 항상 '원시 합계'를 모아 자기 기구수로 계수를 적용한다
 //    (자식의 이미 계수가 곱해진 값을 다시 곱하는 이중 적용을 방지)
 function newAcc(){return {fvCw:0,genCw:0,fvHw:0,genHw:0,fvCnt:0,genCnt:0,hwFvCnt:0,hwGenCnt:0,
-  sewRaw:0,wstRaw:0,sewCnt:0,wstCnt:0,mCw:0,mHw:0,mSew:0,mWst:0};}
+  sewRaw:0,wstRaw:0,sewCnt:0,wstCnt:0,mCw:0,mHw:0,mSew:0,mWst:0,mKPa:0};}
 function accAdd(a,r,skipHot){
   a.fvCw+=r.fvCw; a.genCw+=r.genCw; a.fvCnt+=r.fvCnt; a.genCnt+=r.genCnt;
   if(!skipHot){a.fvHw+=r.fvHw; a.genHw+=r.genHw; a.hwFvCnt+=r.hwFvCnt; a.hwGenCnt+=r.hwGenCnt;}
   a.sewRaw+=r.sewRaw; a.wstRaw+=r.wstRaw; a.sewCnt+=r.sewCnt; a.wstCnt+=r.wstCnt;
   a.mCw=Math.max(a.mCw,r.cwPipe); if(!skipHot)a.mHw=Math.max(a.mHw,r.hwPipe);
+  a.mKPa=Math.max(a.mKPa,r.mKPa||0);
   a.mSew=Math.max(a.mSew,r.sewPipe); a.mWst=Math.max(a.mWst,r.wstPipe);
 }
 // kind: 'branch'(수평지관·기본) | 'stack'(입상관) | 'main'(건물배수 수평주관)
@@ -525,7 +540,7 @@ function calcFloor(floor, type){
   const zs=floor.zoneIds.map(id=>S.zones.find(z=>z.id===id)).filter(Boolean);
   const a=newAcc();
   for(const z of zs) accAdd(a,calcZone(z),z.elecHW);
-  return Object.assign(accResult(a),{cnt:zs.length});
+  return applyUpsize(Object.assign(accResult(a),{cnt:zs.length}), floor.upsize);
 }
 
 // ── Riser calc — 입상관 담당 기구수로 계수 적용 ──────────────────────────────
@@ -544,8 +559,8 @@ function calcRiser(riser, type){
   // 기준: DR-004 — 통기 전개길이 12m 이상이면 한 단계 상향. 입상관 길이 ≈ 분기 층수 × 층고
   const floorH=(S.pressure&&S.pressure.floorH)?S.pressure.floorH:3.0;
   const ventLen=intervals*floorH;
-  return Object.assign(accResult(a,'stack',{intervals,perSew,perWst,ventLen}),
-    {cnt:intervals,intervals,perSew,perWst,ventLen});
+  return applyUpsize(Object.assign(accResult(a,'stack',{intervals,perSew,perWst,ventLen}),
+    {cnt:intervals,intervals,perSew,perWst,ventLen}), riser.upsize);
 }
 
 // ── Zone IDs already allocated (anywhere in the hierarchy for a type) ─────────
@@ -593,7 +608,7 @@ function calcMainType(type){
     r.cwPipe=r.cwQ>0?Math.max(flowPipe(r.cwQ),a.mCw):0;
     r.hwPipe=r.hwQ>0?Math.max(flowPipe(r.hwQ),a.mHw):0;
   }
-  return r;
+  return applyUpsize(r, main.upsize);
 }
 
 // ── Pipe layout constants ──────────────────────────────────────────────────────
@@ -627,7 +642,7 @@ const S={
   cwVmax:1.5,            // 급수·급탕 허용유속 상한 m/s (기준: WS-003)
   cw:{floors:[],risers:[],main:{riserIds:[],floorIds:[],zoneIds:[]}},
   dr:{floors:[],risers:[],main:{riserIds:[],floorIds:[],zoneIds:[]}},
-  pressure:{supplyKPa:250,floorH:3.0,material:'stainless',mainLen:10,branchLen:8,zoneLen:3,minResidualKPa:70}
+  pressure:{supplyKPa:250,floorH:3.0,material:'stainless',mainLen:10,branchLen:8,zoneLen:3,minResidualKPa:55,fittingFactor:1.3}
 };
 let activeZone=null, activeTab=0;
 
@@ -667,9 +682,10 @@ function normalizeState(){
   }
   if(!S.mainLocation) S.mainLocation='bottom';
   if(!S.cwSimultMode) S.cwSimultMode='curve';
-  if(!S.pressure) S.pressure={supplyKPa:250,floorH:3.0,material:'stainless',mainLen:10,branchLen:8,zoneLen:3,minResidualKPa:70};
+  if(!S.pressure) S.pressure={supplyKPa:250,floorH:3.0,material:'stainless',mainLen:10,branchLen:8,zoneLen:3,minResidualKPa:55,fittingFactor:1.3};
   if(S.pressure.zoneLen==null) S.pressure.zoneLen=3;
   if(!S.pressure.material) S.pressure.material='stainless';
+  if(S.pressure.fittingFactor==null) S.pressure.fittingFactor=1.3;   // 기준: WS-005
   let mx=0;
   const scanId=o=>{if(o&&o.id){const n=parseInt(o.id.slice(1));if(!isNaN(n)&&n>mx)mx=n;}};
   S.zones.forEach(z=>{scanId(z);if(z.pipe)Object.values(z.pipe.nodes).forEach(scanId);});
@@ -1222,11 +1238,11 @@ function renderMainPipeTab(){
   let h=`<div style="padding:16px;overflow-y:auto;flex:1">`;
   h+=`<div class="fr mb" style="align-items:center;gap:16px">
     <span class="section-title" style="margin:0">MAIN관 설정</span>
-    <label style="font-size:12px;color:var(--text2)">메인관 위치:
+    <label style="font-size:12px;color:var(--text2)">급수방식:
       <select style="margin-left:6px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 8px;font-size:12px"
         onchange="S.mainLocation=this.value;renderAll()">
-        <option value="bottom"${S.mainLocation==='bottom'?' selected':''}>지하/하부 (하향식)</option>
-        <option value="top"${S.mainLocation==='top'?' selected':''}>옥상/상부 (상향식)</option>
+        <option value="bottom"${S.mainLocation==='bottom'?' selected':''}>지하 기계실 → 상향급수 (부스터펌프·가압식)</option>
+        <option value="top"${S.mainLocation==='top'?' selected':''}>옥상 수조 → 하향급수 (고가수조식)</option>
       </select>
     </label>
     <label style="font-size:12px;color:var(--text2)">급수 동시사용률:
@@ -1328,11 +1344,11 @@ function renderMainPipeTab(){
 function renderResult(){
   const el=document.getElementById('resultPanel');
   const cm=calcMainType('cw'), dm=calcMainType('dr');
-  const locLabel=S.mainLocation==='top'?'옥상/상부':'지하/하부';
+  const locLabel=S.mainLocation==='top'?'고가수조식 (하향급수)':'부스터펌프식 (상향급수)';
   let h=`<div style="padding:16px;overflow-y:auto;flex:1">
   <div class="fr mb" style="align-items:center;gap:16px">
     <span class="result-card-title" style="font-size:15px">메인관 결과</span>
-    <span style="font-size:11px;color:var(--text2)">메인관 위치: <b style="color:var(--warn)">${locLabel}</b></span>
+    <span style="font-size:11px;color:var(--text2)">급수방식: <b style="color:var(--warn)">${locLabel}</b></span>
   </div>
   <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
     <div class="chip"><span class="chip-lbl">급수 MAIN관&nbsp;</span><span class="chip-val" style="color:var(--accent)">${ps(cm.cwPipe)}</span><span class="chip-lbl">&nbsp;${cm.cwQ.toFixed(1)} L/min</span></div>
@@ -1672,8 +1688,8 @@ function renderHelp(){
   h+=step(2,'전기온수기 여부','화장실별 전기온수기를 쓰면 체크하세요. 그 존의 온수량이 중앙급탕 관경에서 빠지고, 밸브 산출에 온수기 밸브 세트(차단+체크)가 잡힙니다.');
   h+=step(3,'급수/급탕 연결','<b>② 탭</b>에서 층을 만들어 화장실을 배정하고, 입상관을 만들어 층을 배정합니다. 이 계층이 곧 계통도입니다.');
   h+=step(4,'오배수 연결','<b>③ 탭</b>에서 같은 방식으로 — 급수와 오배수의 계통이 다르면 다르게 구성할 수 있습니다.');
-  h+=step(5,'MAIN관 설정','<b>④ 탭</b>에서 메인관에 포함할 항목을 체크하고 메인관 위치(상향/하향)를 선택합니다. 급수 동시사용계수는 <b>공조위생 기술데이터북(한미) 표</b>가 기본(권장)이며, 기존 고정 0.85 방식으로 되돌릴 수 있습니다.');
-  h+=step(6,'압력검토','<b>⑤ 탭</b>에서 공급압력·층고·배관 길이를 입력하면 가장 불리한 경로(임계경로)의 말단 잔압을 검토합니다. 잔압 부족 시 업사이즈를 권장해 줍니다.');
+  h+=step(5,'MAIN관 설정','<b>④ 탭</b>에서 메인관에 포함할 항목을 체크하고 <b>급수방식</b>(지하 기계실→상향급수 / 옥상 수조→하향급수)을 선택합니다. 이 선택이 위치수두의 부호를 바꿔 관경에 영향을 줍니다. 급수 동시사용계수·허용유속·배수 MAIN 구배도 여기서 정합니다.');
+  h+=step(6,'압력검토 → 자동 상향','<b>⑤ 탭</b>에서 공급압력·층고·배관 길이·이음쇠 등가장 계수를 입력하면 임계경로의 말단 잔압을 검토합니다. 말단 필요압력은 <b>기구별로 자동 적용</b>됩니다(세정밸브 100kPa 등). <b>「잔압 부족 구간 자동 상향」</b> 버튼을 누르면 부족한 구간의 관경을 올리고 다시 계산하기를 반복해 전 경로를 만족시킵니다. <b>입상관에 층을 배정할 때는 위층부터 나열하세요</b> — 순서가 곧 높이입니다.');
   h+=step(7,'결과 확인','<b>⑥ 탭</b>에서 메인관 관경·통기관·건물 계통도를 확인합니다.');
   h+=step(8,'밸브·부속 산출 → 엑셀','<b>⑦ 탭</b>에서 화장실 말단 밸브(볼·앵글·WHA·온수기 세트·진공브레이커)와 부속(티·엘보·레듀서, 개략)이 자동 산출됩니다. <b>📊 엑셀</b> 버튼으로 관경+밸브+부속 전체를 CSV로 내려받습니다.');
   h+=`</div>`;
@@ -1774,7 +1790,24 @@ function basisGuide(){
      <b>오수와 잡배수를 분리</b>해 각각 산정합니다(분류식). 대·소변기가 오수,
        나머지가 잡배수입니다.`);
 
-  h+=dtl('4. 통기관',
+  h+=dtl('4. 압력검토 — 관경과 압력은 순환합니다',
+    `관경을 유량으로 정하고 끝내면 안 됩니다. <b>정한 관경으로 잔압을 계산하고, 부족하면 관경을 올리고,
+     올린 관경으로 다시 계산</b>해야 합니다. 이 앱은 ⑤ 탭의 「잔압 부족 구간 자동 상향」 버튼이
+     그 반복을 대신합니다 — 마찰손실이 가장 큰 구간부터 한 단계씩 올리며 전 경로가 만족할 때까지 돌립니다.<br><br>
+     <b>말단에서 확보해야 할 압력</b>은 기구마다 다릅니다(KDS 표 4.3-1):<br>
+     ${tbl(th(['기구','필요압력'])+
+        td(['대·소변기 <b>세정밸브</b>','<b>100 kPa</b>'])+
+        td(['샤워기','70 kPa (압력식·온도감지형 130)'])+
+        td(['세면기·욕조·싱크·세정탱크','55 kPa']))}
+     그 경로 끝에 있는 기구 중 <b>가장 높은 값</b>이 그 경로의 기준이 됩니다.
+     세정밸브가 하나라도 있으면 100 kPa 를 확보해야 합니다.<br><br>
+     <b>손실 구성</b> — 마찰손실(Hazen-Williams) + 위치수두. 재질별 유속계수는 PVC 150 / 스테인리스 140 / 동관 130.<br>
+     <b>이음쇠 등가장</b> — 엘보·티·밸브의 저항을 직관 길이로 환산해 더합니다.
+     실무에서 직관 실장의 <b>1.3~1.5배</b>를 쓰며, 이 앱은 계수로 입력받습니다.<br><br>
+     <b>주의 — 층 순서가 곧 높이입니다.</b> 입상관에 층을 배정할 때 <b>위층부터</b> 나열하세요.
+     목록의 첫 층을 가장 높은 층으로 보고 위치수두를 계산합니다.`);
+
+  h+=dtl('5. 통기관',
     `KDS 4.3.4 에 따릅니다.<br>
      · <b>담당 배수관 관지름의 1/2 이상</b>, 최소 <b>DN32</b><br>
      · <b>전개길이 12 m 이상이면 전 길이에 대해 한 단계 큰 관지름</b>
@@ -1784,7 +1817,7 @@ function basisGuide(){
        규정합니다. 이 앱은 그 원표 대신 DFU 개략표 + 위 두 규칙으로 대신하고 있습니다.
        실시설계 단계에서는 원표로 대조하십시오.`);
 
-  h+=dtl('5. 발주처가 자주 묻는 것',
+  h+=dtl('6. 발주처가 자주 묻는 것',
     `<b>Q. 배수에 동시사용률을 왜 적용하지 않았습니까?</b><br>
      A. 기구배수부하단위(DFU)가 이미 동시사용 확률을 반영한 단위이고, KDS 표 4.1-4·4.1-5 가
         그 DFU 단위로 작성돼 있기 때문입니다. 별도로 곱하면 이중 감소가 되어 과소 산정됩니다.
@@ -1804,7 +1837,7 @@ function basisGuide(){
      A. 구간표가 마찰손실 기준이라 대구경에서 유속이 상한을 넘습니다. 유속이 높으면 유수음·
         워터해머·침식부식이 생기므로 두 조건을 모두 만족시킵니다.`);
 
-  h+=dtl('6. 이 앱이 다루지 않는 것 (한계)',
+  h+=dtl('7. 이 앱이 다루지 않는 것 (한계)',
     `· <b>배관 길이·보온 물량</b> — 도면(CAD) 실측의 영역입니다. 부속류는 연결 구조에서 세는 개략치입니다.<br>
      · <b>통기 표 4.3-1 원표</b> — DFU 개략표 + 1/2 규칙 + 12m 규칙으로 대신합니다.<br>
      · <b>특수 배수</b> — 주방 그리스, 실험실 폐수, 산성 배수 등은 별도 계통이며 다루지 않습니다.<br>
@@ -2278,7 +2311,7 @@ function resetAll(){
   S.cwSimultMode='curve';
   S.cw={floors:[],risers:[],main:{riserIds:[],floorIds:[],zoneIds:[]}};
   S.dr={floors:[],risers:[],main:{riserIds:[],floorIds:[],zoneIds:[]}};
-  S.pressure={supplyKPa:250,floorH:3.0,material:'stainless',mainLen:10,branchLen:8,zoneLen:3,minResidualKPa:70};
+  S.pressure={supplyKPa:250,floorH:3.0,material:'stainless',mainLen:10,branchLen:8,zoneLen:3,minResidualKPa:55,fittingFactor:1.3};
   _id=1; activeZone=null;
   try{localStorage.removeItem(LS_KEY);}catch{}
   document.getElementById('projectName').value='새 프로젝트';
@@ -2357,14 +2390,75 @@ function elevLossKPa(h_m){return h_m*9.81;}
 const PIPE_SIZES_ALL=[15,20,25,32,40,50,65,80,100,125,150];
 function pipeNextSize(d){const i=PIPE_SIZES_ALL.indexOf(d);return(i>=0&&i<PIPE_SIZES_ALL.length-1)?PIPE_SIZES_ALL[i+1]:d;}
 
+// ── 기준: WS-005 · 관경↔압력 순환 해석 ────────────────────────────────────────
+//   관경과 압력은 순환 관계다. 유량표로 정한 관경으로 잔압을 계산하고, 기구가 요구하는
+//   최저 압력(KDS 표 4.3-1)에 못 미치면 관경을 올리고, 올린 관경으로 다시 계산한다.
+//   상향 대상은 그 경로에서 마찰손실이 가장 큰 구간부터 고른다(효과가 가장 큰 곳).
+//   결과는 각 객체의 upsize(단계수)에 남고 applyUpsize() 가 관경에 반영한다.
+function pathEntity(type,ids,idx,n){
+  if(!ids) return null;
+  if(idx===0) return S[type].main;                         // 첫 구간은 항상 MAIN
+  if(idx===n-1) return S.zones.find(z=>z.id===ids.z);      // 마지막은 항상 존
+  const mids=[];
+  if(ids.r) mids.push(S[type].risers.find(r=>r.id===ids.r));
+  if(ids.f) mids.push(S[type].floors.find(f=>f.id===ids.f));
+  return mids[idx-1]||null;
+}
+function solvePressureUpsize(type){
+  const MAXIT=40, MAXSTEP=4;
+  let changed=0;
+  for(let it=0;it<MAXIT;it++){
+    const bad=calcAllPressurePaths(type).filter(p=>!p.ok);
+    if(!bad.length) break;
+    bad.sort((a,b)=>(a.residual-a.reqKPa)-(b.residual-b.reqKPa));  // 가장 부족한 경로부터
+    const p=bad[0], n=p.segments.length;
+    const order=p.segments.map((s,i)=>({i,f:s.friction})).sort((x,y)=>y.f-x.f);
+    let bumped=false;
+    for(const seg of order){
+      const t=pathEntity(type,p.ids,seg.i,n);
+      if(!t) continue;
+      const cur=+(t.upsize||0);
+      if(cur>=MAXSTEP) continue;
+      t.upsize=cur+1; bumped=true; changed++;
+      break;
+    }
+    if(!bumped) break;    // 더 올릴 곳이 없다 — 공급압력 자체가 부족한 경우
+  }
+  if(changed) persist();
+  return changed;
+}
+function clearPressureUpsize(type){
+  let n=0;
+  const wipe=o=>{ if(o&&o.upsize){o.upsize=0;n++;} };
+  wipe(S[type].main);
+  for(const r of S[type].risers) wipe(r);
+  for(const f of S[type].floors) wipe(f);
+  for(const z of S.zones) wipe(z);
+  if(n) persist();
+  return n;
+}
+function runUpsize(){
+  const n=solvePressureUpsize('cw');
+  renderAll();
+  alert(n?`잔압을 만족하도록 ${n}단계 상향했습니다.\n각 구간의 상향 내역은 아래 표에서 확인하세요.`
+         :'상향할 구간이 없습니다. (이미 만족하거나, 공급압력 자체가 부족합니다)');
+}
+function resetUpsize(){
+  const n=clearPressureUpsize('cw');
+  renderAll();
+  alert(n?'상향을 모두 해제했습니다.':'해제할 상향이 없습니다.');
+}
+
 function calcAllPressurePaths(type){
   const P=S.pressure,isCW=type==='cw',isTop=S.mainLocation==='top';
   const mat=P.material,floorH=P.floorH,mainLen=P.mainLen,branchLen=P.branchLen,zoneLen=P.zoneLen||3;
+  // 기준: WS-005 — 이음쇠 상당길이(등가장) 계수. 직관 실장에 곱해 부속 손실을 반영한다.
+  const ff=(P.fittingFactor==null?1.3:P.fittingFactor);
   const risers=S[type].risers,floors=S[type].floors;
   const mainR=calcMainType(type);
   const mainQ=isCW?mainR.cwQ:mainR.hwQ;
   const mainD=isCW?mainR.cwPipe:mainR.hwPipe;
-  const mainFriction=frictionLossKPa(mainQ,mainD,mainLen,mat);
+  const mainFriction=frictionLossKPa(mainQ,mainD,mainLen*ff,mat);
   const paths=[];
 
   for(const ri of risers){
@@ -2383,8 +2477,8 @@ function calcAllPressurePaths(type){
       const elevM=elevFloors*floorH;
       const rawElev=elevLossKPa(elevM);
       const elevLoss=isTop?-rawElev:rawElev;
-      const riserFriction=frictionLossKPa(riserQ,riserD,elevM,mat);
-      const branchFriction=frictionLossKPa(flQ,flD,branchLen,mat);
+      const riserFriction=frictionLossKPa(riserQ,riserD,elevM*ff,mat);
+      const branchFriction=frictionLossKPa(flQ,flD,branchLen*ff,mat);
 
       const flZones=fl.zoneIds.map(zid=>S.zones.find(z=>z.id===zid)).filter(Boolean);
       for(const z of flZones){
@@ -2392,17 +2486,20 @@ function calcAllPressurePaths(type){
         const zQ=isCW?zr.cwQ:zr.hwQ;
         const zD=isCW?zr.cwPipe:zr.hwPipe;
         if(!zQ||!zD)continue;
-        const zoneFriction=frictionLossKPa(zQ,zD,zoneLen,mat);
+        const zoneFriction=frictionLossKPa(zQ,zD,zoneLen*ff,mat);
         const totalLoss=mainFriction+riserFriction+branchFriction+zoneFriction+elevLoss;
         paths.push({
           label:`${ri.name} → ${fl.name} → ${z.name}`,
+          ids:{r:ri.id,f:fl.id,z:z.id},
           segments:[
             {name:'MAIN관',Q:mainQ,D:mainD,L:mainLen,friction:mainFriction,elev:0},
             {name:ri.name+' 수직',Q:riserQ,D:riserD,L:elevM,friction:riserFriction,elev:elevLoss},
             {name:fl.name+' 분기',Q:flQ,D:flD,L:branchLen,friction:branchFriction,elev:0},
             {name:z.name,Q:zQ,D:zD,L:zoneLen,friction:zoneFriction,elev:0}
           ],
-          totalLoss,residual:P.supplyKPa-totalLoss,ok:(P.supplyKPa-totalLoss)>=P.minResidualKPa
+          totalLoss,residual:P.supplyKPa-totalLoss,
+        reqKPa:Math.max(zr.mKPa||0,P.minResidualKPa||0),
+        ok:(P.supplyKPa-totalLoss)>=Math.max(zr.mKPa||0,P.minResidualKPa||0)
         });
       }
     }
@@ -2416,17 +2513,20 @@ function calcAllPressurePaths(type){
       if(!zQ||!zD)continue;
       const elevM=floorH;
       const elevLoss=isTop?-elevLossKPa(elevM):elevLossKPa(elevM);
-      const riserFriction=frictionLossKPa(riserQ,riserD,elevM,mat);
-      const zoneFriction=frictionLossKPa(zQ,zD,zoneLen,mat);
+      const riserFriction=frictionLossKPa(riserQ,riserD,elevM*ff,mat);
+      const zoneFriction=frictionLossKPa(zQ,zD,zoneLen*ff,mat);
       const totalLoss=mainFriction+riserFriction+zoneFriction+elevLoss;
       paths.push({
         label:`${ri.name} → ${z.name}`,
+        ids:{r:ri.id,z:z.id},
         segments:[
           {name:'MAIN관',Q:mainQ,D:mainD,L:mainLen,friction:mainFriction,elev:0},
           {name:ri.name+' 수직',Q:riserQ,D:riserD,L:elevM,friction:riserFriction,elev:elevLoss},
           {name:z.name,Q:zQ,D:zD,L:zoneLen,friction:zoneFriction,elev:0}
         ],
-        totalLoss,residual:P.supplyKPa-totalLoss,ok:(P.supplyKPa-totalLoss)>=P.minResidualKPa
+        totalLoss,residual:P.supplyKPa-totalLoss,
+        reqKPa:Math.max(zr.mKPa||0,P.minResidualKPa||0),
+        ok:(P.supplyKPa-totalLoss)>=Math.max(zr.mKPa||0,P.minResidualKPa||0)
       });
     }
   }
@@ -2439,22 +2539,25 @@ function calcAllPressurePaths(type){
     if(!flQ||!flD)continue;
     const elevM=floorH;
     const elevLoss=isTop?-elevLossKPa(elevM):elevLossKPa(elevM);
-    const branchFriction=frictionLossKPa(flQ,flD,branchLen,mat);
+    const branchFriction=frictionLossKPa(flQ,flD,branchLen*ff,mat);
     for(const zid of fl.zoneIds){
       const z=S.zones.find(z=>z.id===zid);if(!z)continue;
       const zr=calcZone(z);
       const zQ=isCW?zr.cwQ:zr.hwQ, zD=isCW?zr.cwPipe:zr.hwPipe;
       if(!zQ||!zD)continue;
-      const zoneFriction=frictionLossKPa(zQ,zD,zoneLen,mat);
+      const zoneFriction=frictionLossKPa(zQ,zD,zoneLen*ff,mat);
       const totalLoss=mainFriction+branchFriction+zoneFriction+elevLoss;
       paths.push({
         label:`MAIN → ${fl.name} → ${z.name}`,
+        ids:{f:fl.id,z:z.id},
         segments:[
           {name:'MAIN관',Q:mainQ,D:mainD,L:mainLen,friction:mainFriction,elev:elevLoss},
           {name:fl.name+' 분기',Q:flQ,D:flD,L:branchLen,friction:branchFriction,elev:0},
           {name:z.name,Q:zQ,D:zD,L:zoneLen,friction:zoneFriction,elev:0}
         ],
-        totalLoss,residual:P.supplyKPa-totalLoss,ok:(P.supplyKPa-totalLoss)>=P.minResidualKPa
+        totalLoss,residual:P.supplyKPa-totalLoss,
+        reqKPa:Math.max(zr.mKPa||0,P.minResidualKPa||0),
+        ok:(P.supplyKPa-totalLoss)>=Math.max(zr.mKPa||0,P.minResidualKPa||0)
       });
     }
   }
@@ -2466,15 +2569,18 @@ function calcAllPressurePaths(type){
     if(!zQ||!zD)continue;
     const elevM=floorH;
     const elevLoss=isTop?-elevLossKPa(elevM):elevLossKPa(elevM);
-    const zoneFriction=frictionLossKPa(zQ,zD,zoneLen,mat);
+    const zoneFriction=frictionLossKPa(zQ,zD,zoneLen*ff,mat);
     const totalLoss=mainFriction+zoneFriction+elevLoss;
     paths.push({
       label:`MAIN → ${z.name}`,
+      ids:{z:z.id},
       segments:[
         {name:'MAIN관',Q:mainQ,D:mainD,L:mainLen,friction:mainFriction,elev:elevLoss},
         {name:z.name,Q:zQ,D:zD,L:zoneLen,friction:zoneFriction,elev:0}
       ],
-      totalLoss,residual:P.supplyKPa-totalLoss,ok:(P.supplyKPa-totalLoss)>=P.minResidualKPa
+      totalLoss,residual:P.supplyKPa-totalLoss,
+      reqKPa:Math.max(zr.mKPa||0,P.minResidualKPa||0),
+      ok:(P.supplyKPa-totalLoss)>=Math.max(zr.mKPa||0,P.minResidualKPa||0)
     });
   }
   paths.sort((a,b)=>a.residual-b.residual);
@@ -2516,9 +2622,9 @@ function renderPressurePathResult(paths,type,isCW){
     <td colspan="4" style="padding:3px 5px;font-weight:700;font-size:11px">말단 잔압</td>
     <td style="padding:3px 5px;text-align:right;font-weight:700;font-size:13px;color:${resCol}">${critical.residual.toFixed(1)} kPa <span style="font-size:10px;color:var(--text2)">(${(critical.residual/98.0665).toFixed(2)} kgf/cm²)</span></td>
   </tr>
-  <tr><td colspan="5" style="padding:1px 5px;font-size:10px;color:${resCol}">${critical.ok?`✓ 기준 ${P.minResidualKPa}kPa 충족`:`⚠ 기준 ${P.minResidualKPa}kPa 미달 — 업사이즈 필요`}</td></tr>
+  <tr><td colspan="5" style="padding:1px 5px;font-size:10px;color:${resCol}">${critical.ok?`✓ 필요압력 ${critical.reqKPa}kPa 충족`:`⚠ 필요압력 ${critical.reqKPa}kPa 미달 — 관경 상향 필요`}</td></tr>
   </table>
-  <div style="font-size:10px;color:var(--text3);margin-top:6px;text-align:right">단위: kPa · 이음쇠 상당길이 미포함(실제 ×1.3~1.5 고려)</div>
+  <div style="font-size:10px;color:var(--text3);margin-top:6px;text-align:right">단위: kPa · 이음쇠 등가장 ×${(P.fittingFactor??1.3).toFixed(2)} 반영 · 필요압력은 KDS 31 30 15 표 4.3-1</div>
   </div>`;
 
   // All paths summary
@@ -2595,24 +2701,43 @@ function renderPressureTab(){
       ${inp('zoneLen',P.zoneLen??3,0.5,50,0.5,'층 분기에서 화장실 말단 기구까지')}</div>
     <div style="margin-bottom:6px"><div style="font-size:10.5px;color:var(--text2);margin-bottom:3px">최소 잔압 기준 (kPa)</div>
       ${inp('minResidualKPa',P.minResidualKPa,30,200,5,'건물 내 기구 중 가장 높은 값 적용')}</div>
+    <div style="margin-bottom:6px"><div style="font-size:10.5px;color:var(--text2);margin-bottom:3px">이음쇠 등가장 계수</div>
+      ${inp('fittingFactor',P.fittingFactor??1.3,1.0,2.0,0.05,'직관 실장 × 계수 — 엘보·티·밸브의 상당길이 반영 (실무 1.3~1.5)')}</div>
+    <div style="display:flex;gap:6px;margin:12px 0 4px">
+      <button class="btn btn-sm" style="flex:1" onclick="runUpsize()">잔압 부족 구간 자동 상향</button>
+      <button class="btn btn-sm btn-danger" onclick="resetUpsize()">해제</button>
+    </div>
+    <div style="font-size:9.5px;color:var(--text3);line-height:1.5;margin-bottom:10px">
+      관경↔압력은 순환 관계입니다. 버튼을 누르면 잔압이 기구 필요압력에 못 미치는 경로를 찾아
+      마찰이 가장 큰 구간부터 한 단계씩 올리고, 올린 관경으로 다시 계산하기를 반복합니다.
+    </div>
     <details style="margin-bottom:10px">
-      <summary style="font-size:10px;color:var(--accent);cursor:pointer;padding:3px 0">▸ 기구별 최소 잔압 기준표 (KS B 6301)</summary>
+      <summary style="font-size:10px;color:var(--accent);cursor:pointer;padding:3px 0">▸ 기구별 최저 필요 급수압력 (KDS 31 30 15 표 4.3-1)</summary>
       <table style="width:100%;border-collapse:collapse;font-size:10px;margin-top:5px">
         <tr style="background:var(--surface2)">
           <th style="padding:3px 5px;text-align:left;color:var(--text2);font-weight:600;border-bottom:1px solid var(--border)">기구</th>
-          <th style="padding:3px 5px;text-align:center;color:var(--text2);font-weight:600;border-bottom:1px solid var(--border)">기준</th>
+          <th style="padding:3px 5px;text-align:right;color:var(--text2);font-weight:600;border-bottom:1px solid var(--border)">필요압력</th>
+          <th style="padding:3px 5px;text-align:right;color:var(--text2);font-weight:600;border-bottom:1px solid var(--border)">유량</th>
         </tr>
-        <tr><td style="padding:3px 5px;border-bottom:1px solid var(--border)">일반 수전 (세면기·싱크)</td><td style="padding:3px 5px;text-align:center;color:var(--accent2);font-weight:700;border-bottom:1px solid var(--border)">70 kPa</td></tr>
-        <tr style="background:var(--surface2)"><td style="padding:3px 5px;border-bottom:1px solid var(--border)">샤워기</td><td style="padding:3px 5px;text-align:center;color:var(--accent2);font-weight:700;border-bottom:1px solid var(--border)">100 kPa</td></tr>
-        <tr><td style="padding:3px 5px;border-bottom:1px solid var(--border)">대·소변기 세정밸브</td><td style="padding:3px 5px;text-align:center;color:var(--accent2);font-weight:700;border-bottom:1px solid var(--border)">70 kPa</td></tr>
-        <tr style="background:var(--surface2)"><td style="padding:3px 5px;border-bottom:1px solid var(--border)">순간온수기 (가스·전기)</td><td style="padding:3px 5px;text-align:center;color:var(--warn);font-weight:700;border-bottom:1px solid var(--border)">100 kPa↑</td></tr>
-        <tr><td style="padding:3px 5px">세탁기</td><td style="padding:3px 5px;text-align:center;color:var(--text2);font-weight:700">50 kPa</td></tr>
+        ${FX_KEYS.filter(k=>FX[k].minKPa>0).map((k,i)=>{const f=FX[k];
+          return `<tr${i%2?' style="background:var(--surface2)"':''}>
+            <td style="padding:3px 5px;border-bottom:1px solid var(--border)">${f.name}</td>
+            <td style="padding:3px 5px;text-align:right;font-weight:700;color:${f.minKPa>=100?'var(--warn)':'var(--accent2)'};border-bottom:1px solid var(--border)">${f.minKPa} kPa</td>
+            <td style="padding:3px 5px;text-align:right;color:var(--text2);border-bottom:1px solid var(--border)">${f.cwQ} L/min</td></tr>`;}).join('')}
       </table>
-      <div style="font-size:9.5px;color:var(--text3);margin-top:4px;line-height:1.5">※ 순간온수기 있으면 100 kPa 적용<br>※ 건물 내 최고 기준값으로 통일 설정 권장</div>
+      <div style="font-size:9.5px;color:var(--text3);margin-top:4px;line-height:1.5">
+        ※ 이 값은 <b>구간별로 자동 적용</b>됩니다 — 그 경로 끝에 있는 기구 중 가장 높은 값이 기준이 됩니다.<br>
+        ※ 위 「최소 잔압 기준」은 그 위에 덧씌우는 <b>하한</b>입니다(기구 기준보다 낮으면 무시됨).<br>
+        ※ 세정밸브 100 kPa — 구 기준의 70 kPa(7m수두)에서 상향된 값입니다.
+      </div>
     </details>
-    <div style="font-size:10px;color:var(--text3);margin-top:16px;line-height:1.6;padding:8px;background:var(--surface2);border-radius:6px">
+    <div style="font-size:10px;color:var(--warn);margin-top:12px;line-height:1.6;padding:8px;background:rgba(224,168,92,0.10);border:1px solid var(--warn);border-radius:6px">
+      ⚠ <b>층 순서가 곧 높이입니다.</b> ②·③ 탭의 입상관에서 층을 <b>위층부터</b> 나열하세요
+      (예: 10층 → 9층 → … → 1층). 목록의 첫 층을 가장 높은 층으로 보고 위치수두를 계산합니다.
+    </div>
+    <div style="font-size:10px;color:var(--text3);margin-top:10px;line-height:1.6;padding:8px;background:var(--surface2);border-radius:6px">
       ※ 배관 길이는 실제 도면 기준으로 수정 필요<br>
-      ※ 이음쇠 상당길이 미포함 (실제 ×1.3~1.5 적용 권장)<br>
+      ※ 이음쇠 상당길이는 위 <b>등가장 계수 ×${(P.fittingFactor??1.3).toFixed(2)}</b> 로 반영됨<br>
       ※ 급탕은 급수 계산 기준으로 참고
     </div>
   </div>
@@ -2638,9 +2763,10 @@ function renderPressureTab(){
   if(S.cw.risers.length){
     const P=S.pressure,isTop=S.mainLocation==='top';
     const mat=P.material,zoneLen=P.zoneLen||3;
+    const ff=(P.fittingFactor==null?1.3:P.fittingFactor);   // 기준: WS-005 등가장 계수
     const mainR=calcMainType('cw');
     const mainQ=mainR.hwQ,mainD=mainR.hwPipe;
-    const mainFriction=frictionLossKPa(mainQ,mainD,P.mainLen,mat);
+    const mainFriction=frictionLossKPa(mainQ,mainD,P.mainLen*ff,mat);
     for(const ri of S.cw.risers){
       const rr=calcRiser(ri,'cw');
       const riserQ=rr.hwQ,riserD=rr.hwPipe;
@@ -2653,14 +2779,14 @@ function renderPressureTab(){
         const elevFloors=isTop?(fi+1):(riFloors.length-fi);
         const elevM=elevFloors*P.floorH;
         const elevLoss=isTop?-elevLossKPa(elevM):elevLossKPa(elevM);
-        const riserFriction=frictionLossKPa(riserQ,riserD,elevM,mat);
-        const branchFriction=frictionLossKPa(flQ,flD,P.branchLen,mat);
+        const riserFriction=frictionLossKPa(riserQ,riserD,elevM*ff,mat);
+        const branchFriction=frictionLossKPa(flQ,flD,P.branchLen*ff,mat);
         const flZones=fl.zoneIds.map(zid=>S.zones.find(z=>z.id===zid)).filter(Boolean).filter(z=>!z.elecHW);
         for(const z of flZones){
           const zr=calcZone(z);
           const zQ=zr.hwQ,zD=zr.hwPipe;
           if(!zQ||!zD)continue;
-          const zoneFriction=frictionLossKPa(zQ,zD,zoneLen,mat);
+          const zoneFriction=frictionLossKPa(zQ,zD,zoneLen*ff,mat);
           const totalLoss=mainFriction+riserFriction+branchFriction+zoneFriction+elevLoss;
           hwPathsReal.push({
             label:`${ri.name} → ${fl.name} → ${z.name}`,
@@ -2670,7 +2796,9 @@ function renderPressureTab(){
               {name:fl.name+' 분기',Q:flQ,D:flD,L:P.branchLen,friction:branchFriction,elev:0},
               {name:z.name,Q:zQ,D:zD,L:zoneLen,friction:zoneFriction,elev:0}
             ],
-            totalLoss,residual:P.supplyKPa-totalLoss,ok:(P.supplyKPa-totalLoss)>=P.minResidualKPa
+            totalLoss,residual:P.supplyKPa-totalLoss,
+        reqKPa:Math.max(zr.mKPa||0,P.minResidualKPa||0),
+        ok:(P.supplyKPa-totalLoss)>=Math.max(zr.mKPa||0,P.minResidualKPa||0)
           });
         }
       }
@@ -2832,7 +2960,10 @@ function _printPDF(){
       건물배수 수평주관은 <b>표 4.1-4</b> 구배 <b>${DR_SLOPES[S.drSlope==null?1:S.drSlope]}</b> 기준.
       오수관 최소 100A, 잡배수관 최소 50A, 상류관경은 하류 최대관경 이상 |
       통기: DFU 개략표 + 담당 배수관경의 1/2 이상, 최소 32A |
-      압력손실: <b>Hazen-Williams</b> (PVC C=150, 동관 C=130, STS C=140)
+      압력손실: <b>Hazen-Williams</b> (PVC C=150, 동관 C=130, STS C=140),
+      이음쇠 등가장 <b>×${(S.pressure.fittingFactor??1.3).toFixed(2)}</b> |
+      말단 필요압력: <b>KDS 31 30 15 표 4.3-1</b> 기구별 값 적용
+      (세정밸브 100 · 샤워 70 · 그 외 55 kPa). 잔압 미달 시 관경을 상향해 재계산
     </div>`;
   }
   function footer(){
