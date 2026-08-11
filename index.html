@@ -253,20 +253,23 @@ select:focus{outline:none;border-color:var(--accent)}
 <script>
 // ── Constants ──────────────────────────────────────────────────────────────────
 const FX_KEYS = ['wc_v','wc_t','ur_v','ur_t','bas_p','bas_i','shw','bath','sink','cls','fd','wsh'];
-// 기준: WS-001 (cwQ·conn·hot) / DR-001 (dfu·drain·dc) — 근거는 볼트 ~/mep-standards
+// 기준: WS-001 (cwQ·conn) — KDS 31 30 15 표 4.3-1 「위생기구의 최저 필요 급수압력과 유량」
+//   원표는 L/s 이므로 ×60 하여 L/min 으로 환산했다.
+// 기준: DR-001 (dfu·drain·dc) — KDS 31 30 25 표 4.1-2 「기구배수부하단위」
+//   dc(기구배수관경)는 KDS 최소값 이상으로 국내 실무 관행값을 쓴 항목이 있다(볼트 DR-001 참조).
 const FX = {
-  wc_v:  {name:'대변기(세정밸브)', cwQ:15, conn:25, hot:false, dfu:6,  drain:'sew', dc:100},
-  wc_t:  {name:'대변기(세정탱크)', cwQ:12, conn:15, hot:false, dfu:6,  drain:'sew', dc:100},
-  ur_v:  {name:'소변기(세정밸브)', cwQ:8,  conn:20, hot:false, dfu:4,  drain:'sew', dc:75},
+  wc_v:  {name:'대변기(세정밸브)', cwQ:96, conn:25, hot:false, dfu:4,  drain:'sew', dc:100},
+  wc_t:  {name:'대변기(세정탱크)', cwQ:11, conn:15, hot:false, dfu:4,  drain:'sew', dc:100},
+  ur_v:  {name:'소변기(세정밸브)', cwQ:45, conn:20, hot:false, dfu:4,  drain:'sew', dc:75},
   ur_t:  {name:'소변기(세정탱크)', cwQ:6,  conn:15, hot:false, dfu:4,  drain:'sew', dc:75},
-  bas_p: {name:'세면기(공중용)',   cwQ:8,  conn:15, hot:true,  dfu:1,  drain:'wst', dc:40},
+  bas_p: {name:'세면기(공중용)',   cwQ:6,  conn:15, hot:true,  dfu:1,  drain:'wst', dc:40},
   bas_i: {name:'세면기(개인용)',   cwQ:6,  conn:15, hot:true,  dfu:1,  drain:'wst', dc:40},
-  shw:   {name:'샤워기',           cwQ:15, conn:15, hot:true,  dfu:0,  drain:null, dc:0},
-  bath:  {name:'욕조',             cwQ:30, conn:20, hot:true,  dfu:2,  drain:'wst', dc:40},
-  sink:  {name:'주방싱크',         cwQ:8,  conn:15, hot:true,  dfu:2,  drain:'wst', dc:50},
-  cls:   {name:'청소싱크',         cwQ:10, conn:20, hot:false, dfu:3,  drain:'wst', dc:75},
+  shw:   {name:'샤워기',           cwQ:11, conn:15, hot:true,  dfu:2,  drain:'wst', dc:50},
+  bath:  {name:'욕조',             cwQ:15, conn:20, hot:true,  dfu:2,  drain:'wst', dc:40},
+  sink:  {name:'주방싱크',         cwQ:9,  conn:15, hot:true,  dfu:2,  drain:'wst', dc:50},
+  cls:   {name:'청소싱크',         cwQ:11, conn:20, hot:false, dfu:3,  drain:'wst', dc:75},
   fd:    {name:'FD(배수구)',        cwQ:0,  conn:0,  hot:false, dfu:1,  drain:'wst', dc:50},
-  wsh:   {name:'세탁기',           cwQ:8,  conn:15, hot:false, dfu:2,  drain:'wst', dc:50},
+  wsh:   {name:'세탁기',           cwQ:8,  conn:15, hot:false, dfu:3,  drain:'wst', dc:50},
 };
 
 // ── Pipe tables ────────────────────────────────────────────────────────────────
@@ -495,18 +498,25 @@ function accResult(a,kind,opt){
     cwPipe:s.cwQ>0?Math.max(flowPipe(s.cwQ),a.mCw):0,
     hwPipe:s.hwQ>0?Math.max(flowPipe(s.hwQ),a.mHw):0,
     sewPipe:sp, wstPipe:wp,
-    sewVent:ventPipe(sD,sp), wstVent:ventPipe(wD,wp)});
+    sewVent:ventPipe(sD,sp,opt.ventLen), wstVent:ventPipe(wD,wp,opt.ventLen)});
 }
-// 기준: DR-004
-// 통기관경 — DFU 기반 개략 + 담당 배수관경의 1/2 이상, 최소 32A
+// 기준: DR-004 — KDS 31 30 25, 4.3.4 통기관의 관 지름선정
+//   (2) 담당 배수관 관지름의 1/2 이상, 최소 DN32
+//   (2) 배관길이가 12 m 이상이면 전 배관길이에 대해 한 단계 큰 관지름
+//   (1) 신정통기관·통기수직관은 원칙적으로 표 4.3-1(길이 + 총 DFU)로 결정 — 원문 미입수라
+//       아래 DFU 개략표로 대신한다. 볼트 DR-004 참조.
 const VENT_SIZES=[32,40,50,65,75,100,125,150];
-function ventPipe(dfu,drainD){
+function ventPipe(dfu,drainD,len){
   if(!dfu)return 0;
   let v;
   if(dfu<=2)v=32; else if(dfu<=8)v=40; else if(dfu<=24)v=50;
   else if(dfu<=42)v=65; else if(dfu<=60)v=75; else if(dfu<=500)v=100; else v=125;
   const half=(drainD||0)/2;
   for(const s of VENT_SIZES){ if(s>=half){ v=Math.max(v,s); break; } }
+  if((len||0)>=12){                       // 12 m 이상 → 한 단계 상향
+    const i=VENT_SIZES.indexOf(v);
+    if(i>=0&&i<VENT_SIZES.length-1) v=VENT_SIZES[i+1];
+  }
   return v;
 }
 
@@ -531,8 +541,11 @@ function calcRiser(riser, type){
   for(const z of zones){ const zr=calcZone(z); accAdd(a,zr,z.elecHW);
     perSew=Math.max(perSew,zr.sewDFU); perWst=Math.max(perWst,zr.wstDFU); }
   const intervals=floors.length+zones.length;
-  return Object.assign(accResult(a,'stack',{intervals,perSew,perWst}),
-    {cnt:intervals,intervals,perSew,perWst});
+  // 기준: DR-004 — 통기 전개길이 12m 이상이면 한 단계 상향. 입상관 길이 ≈ 분기 층수 × 층고
+  const floorH=(S.pressure&&S.pressure.floorH)?S.pressure.floorH:3.0;
+  const ventLen=intervals*floorH;
+  return Object.assign(accResult(a,'stack',{intervals,perSew,perWst,ventLen}),
+    {cnt:intervals,intervals,perSew,perWst,ventLen});
 }
 
 // ── Zone IDs already allocated (anywhere in the hierarchy for a type) ─────────
@@ -1675,12 +1688,139 @@ function renderHelp(){
   h+=`<div class="section"><div class="section-title">꼭 알아둘 것</div>
     <div style="font-size:11.5px;color:var(--text2);line-height:1.9">
       ① 부속류(티·엘보·레듀서)는 배관 그림의 연결 구조에서 자동으로 세는 <b>개략치</b>입니다. 배관 <b>길이·보온 물량은 도면(CAD) 실측의 영역</b>이라 이 앱은 다루지 않습니다.<br>
-      ② 통기관경은 DFU 개략표 + 담당 배수관경의 1/2 이상 기준입니다.<br>
+      ② 통기관경은 DFU 개략표 + 담당 배수관경의 1/2 이상, 전개길이 12m 이상 시 한 단계 상향입니다.<br>
       ③ 기계실·입상관 밸브(게이트·PRV·대형 수격방지기 등)는 <b>밸브 계통도 계산서 앱</b>에서 산출하세요 — 두 앱을 합치면 건물 전체 밸브가 됩니다.<br>
       ④ 밸브가 처음이라면 ⑦ 탭 하단의 <b>밸브 설명서</b>를 펼쳐보세요 — 원리를 그림으로 설명합니다.
     </div></div>`;
+  h+=basisGuide();
   h+=`</div>`;
   el.innerHTML=h;
+}
+
+// ── 산정 근거와 계산 방법 (발주처 검토용 · 학습용) ─────────────────────────────
+// 볼트 ~/mep-standards 의 기준 노트(WS-001~003, DR-001~005)와 같은 내용이다.
+// 계산 로직을 바꾸면 이 글도 함께 고칠 것.
+function basisGuide(){
+  const dtl=(t,b)=>`<details style="margin-bottom:8px;border:1px solid var(--border);border-radius:6px;background:var(--surface2)">
+    <summary style="padding:9px 12px;cursor:pointer;font-size:12.5px;font-weight:600">${t}</summary>
+    <div style="padding:4px 14px 14px;font-size:11.8px;color:var(--text2);line-height:1.85">${b}</div></details>`;
+  const tbl=rows=>`<table style="width:100%;border-collapse:collapse;font-size:11px;margin:8px 0">${rows}</table>`;
+  const th=cells=>`<tr>${cells.map(c=>`<th style="padding:4px 6px;border-bottom:1.5px solid var(--border);text-align:left;color:var(--text)">${c}</th>`).join('')}</tr>`;
+  const td=cells=>`<tr>${cells.map(c=>`<td style="padding:4px 6px;border-bottom:1px solid var(--border)">${c}</td>`).join('')}</tr>`;
+
+  let h=`<div class="section"><div class="section-title">산정 근거와 계산 방법</div>
+    <div style="font-size:12px;line-height:1.8;margin-bottom:12px">
+      이 계산서가 <b>어떤 기준으로, 왜 그렇게</b> 계산하는지 설명합니다.
+      발주처 검토 대응에 그대로 쓸 수 있고, 처음 배우는 분은 이 순서대로 읽으면 관경 산정의 흐름이 잡힙니다.
+    </div>`;
+
+  h+=dtl('0. 따르는 기준',
+    `<b>오수·잡배수·통기 — KDS 31 30 25 : 2021 배수통기설비</b><br>
+     · 표 4.1-2 기구배수부하단위(DFU) · 표 4.1-4 건물배수 수평주관(구배별)<br>
+     · 표 4.1-5 배수 수평지관과 수직관 · 4.3.4 통기관의 관 지름선정<br><br>
+     <b>급수·급탕 — KDS 31 30 15 : 2021 급수설비</b><br>
+     · 표 4.3-1 위생기구의 최저 필요 급수압력과 유량 · 표 4.5-1 기구급수관의 최소 관지름<br>
+     · <b>단, 관지름 산정법 자체는 KDS 4.1 이 「SAREK 표준 401-2013」으로 위임</b>합니다.
+       이 앱의 유량 구간표는 그 계열의 표이며, 결과가 국내 통용 기준
+       (마찰손실 50 mmAq/m 이하, 유속 1.5 m/s 이하)을 만족함을 역산으로 확인했습니다.<br><br>
+     <b>동시사용계수</b> — 공조위생 기술데이터북(한미)`);
+
+  h+=dtl('1. 가장 중요한 원리 — 급수는 동시사용률을 쓰고, 배수는 쓰지 않습니다',
+    `가장 많이 오해하는 지점입니다. <b>"급수는 되고 배수는 안 된다"가 아니라,
+     확률을 어디서 한 번 반영하느냐의 차이</b>입니다.<br>
+     ${tbl(th(['','넣는 값','동시사용 확률이 반영되는 곳'])+
+        td(['<b>급수</b>','기구 순간유량(L/min) 합계','<b>변환 단계</b> — 동시사용계수를 곱해 설계유량을 만든 뒤 관경표로'])+
+        td(['<b>배수</b>','기구배수부하단위(DFU) 합계','<b>표 안에 이미</b> — 변환 없이 바로 관경표로']))}
+     <b>부하단위(DFU)는 배수량만 환산한 값이 아닙니다.</b> 사용 빈도·지속시간·동시사용 확률까지
+     함께 녹여서 만든 상대 단위입니다. 대변기의 실제 순간 배수량은 세면기의 수십 배인데
+     DFU 는 4 대 1 인 이유가 그것입니다.<br><br>
+     그래서 배수관경표는 <b>애초에 "이 관은 DFU 몇까지"로 보정된 표</b>이고,
+     여기에 동시사용률을 또 곱하면 <b>감소가 두 번</b> 적용되어 관경이 과소 산정됩니다.
+     어느 쪽이든 <b>두 번 반영하면 틀립니다.</b>`);
+
+  h+=dtl('2. 급수·급탕은 이렇게 계산합니다 (5단계)',
+    `<b>① 기구별 순간유량</b> — KDS 표 4.3-1. 예: 대변기(세정밸브) 1.6 L/s = <b>96 L/min</b>,
+       세면기 0.1 L/s = 6 L/min. 세정밸브는 순간유량이 매우 큽니다.<br>
+     <b>② 구간별 합산</b> — 그 구간이 담당하는 기구의 유량을 더합니다.<br>
+     <b>③ 동시사용계수</b> — 기구수에 따라 곱합니다. <b>곡선이 두 개</b>입니다:<br>
+     &nbsp;&nbsp;· <b>세정밸브류</b>(대·소변기 플러시밸브): 순간유량이 크고 사용시간이 짧아 계수가 급격히 떨어집니다(기구 100개에 10%).<br>
+     &nbsp;&nbsp;· <b>일반기구</b>: 완만합니다(기구 100개에 33%).<br>
+     &nbsp;&nbsp;두 그룹에 각자의 계수를 적용한 뒤 <b>합산</b>합니다.<br>
+     &nbsp;&nbsp;<b>화장실 → 층 → 입상관 → MAIN 각 단계마다</b> 그 단계가 담당하는 기구수로 적용하며,
+       각 단계는 항상 <b>원시 합계</b>를 모아 계산합니다 — 이미 계수가 곱해진 값에 다시 곱하는
+       <b>이중 적용을 금지</b>합니다.<br>
+     <b>④ 유량 구간표</b> — 설계유량으로 관경을 선정합니다. 이 표는 <b>마찰손실 기준</b>이며
+       전 구간 약 19~29 mmAq/m 입니다(기준 50 이하).<br>
+     <b>⑤ 유속 검사</b> — 구간표가 마찰손실 기준이라 대구경에서 유속이 올라갑니다.
+       선정된 관경의 유속이 <b>${S.cwVmax||1.5} m/s</b>를 넘으면 한 단계 올립니다.<br><br>
+     추가로 <b>기구급수관 최소 관지름</b>(KDS 표 4.5-1, 예: 세정밸브 DN25)과
+     <b>역전 금지</b>(상류 관경 ≥ 하류 최대 관경)를 항상 만족시킵니다.`);
+
+  h+=dtl('3. 오수·잡배수는 이렇게 계산합니다 (3단계)',
+    `<b>① DFU 합산</b> — KDS 표 4.1-2. 대변기 4.0 / 소변기 4.0 / 세면기 1.0 / 욕조 2.0 /
+       샤워 2.0 / 주방싱크 2.0 / 청소싱크 3.0 / 세탁기 3.0.
+       <b>동시사용률은 곱하지 않습니다</b>(위 1번 참조).<br>
+     <b>② 관의 위치에 따라 다른 표</b> — 이게 핵심입니다:<br>
+     ${tbl(th(['관의 위치','쓰는 표'])+
+        td(['화장실 내부 · 층별 횡주관','표 4.1-5 <b>수평지관</b> 열'])+
+        td(['입상관(수직관)','표 4.1-5 <b>수직관</b> 열 — 분기 층수 3 이하 / 3 초과'])+
+        td(['건물배수 수평주관(MAIN)','표 4.1-4 — <b>구배별</b>로 값이 다름']))}
+     <b>수직관은 분기 층수가 3을 넘으면 두 조건을 동시에</b> 만족해야 합니다 —
+       ㉮ 총합 ㉯ 1개 분기층당. 저층부에 화장실이 몰린 건물에서 ㉯가 걸립니다.<br>
+     <b>수평주관은 구배를 먼저 정해야</b> 합니다. 구배 1/100 과 1/25 에서 허용 부하가 1.4배 차이나고,
+       <b>구배 1/200 에서는 200A 미만을 아예 쓸 수 없습니다</b>(표에 값이 없음).
+       완만한 구배에 작은 관을 쓰면 유속이 확보되지 않아 고형물이 퇴적됩니다.<br>
+     <b>③ 최소 관경</b> — 오수관 100A, 잡배수관 50A, 그리고 역전 금지.<br><br>
+     <b>오수와 잡배수를 분리</b>해 각각 산정합니다(분류식). 대·소변기가 오수,
+       나머지가 잡배수입니다.`);
+
+  h+=dtl('4. 통기관',
+    `KDS 4.3.4 에 따릅니다.<br>
+     · <b>담당 배수관 관지름의 1/2 이상</b>, 최소 <b>DN32</b><br>
+     · <b>전개길이 12 m 이상이면 전 길이에 대해 한 단계 큰 관지름</b>
+       — 입상관은 분기 층수 × 층고로 길이를 추정하므로, 4층 이상이면 대개 걸립니다<br>
+     · DFU 규모에 따른 개략표를 함께 적용합니다<br><br>
+     <b>한계</b>: KDS 는 신정통기관·통기수직관을 <b>표 4.3-1</b>(배관길이 + 총 DFU)로 결정하도록
+       규정합니다. 이 앱은 그 원표 대신 DFU 개략표 + 위 두 규칙으로 대신하고 있습니다.
+       실시설계 단계에서는 원표로 대조하십시오.`);
+
+  h+=dtl('5. 발주처가 자주 묻는 것',
+    `<b>Q. 배수에 동시사용률을 왜 적용하지 않았습니까?</b><br>
+     A. 기구배수부하단위(DFU)가 이미 동시사용 확률을 반영한 단위이고, KDS 표 4.1-4·4.1-5 가
+        그 DFU 단위로 작성돼 있기 때문입니다. 별도로 곱하면 이중 감소가 되어 과소 산정됩니다.
+        KDS 4.1.5 에도 동시사용률을 곱하라는 규정이 없습니다.<br><br>
+     <b>Q. 같은 DFU 인데 층 관경과 입상관 관경이 왜 다릅니까?</b><br>
+     A. 표 4.1-5 가 수평지관 열과 수직관 열을 나눠 규정하기 때문입니다. 수직관은 물이 관벽을
+        타고 흐르며 중앙에 공기심이 유지되어 허용 부하가 더 큽니다.<br><br>
+     <b>Q. 샤워기의 배수는 어디에 반영됐습니까?</b><br>
+     A. 샤워는 KDS 표 4.1-2 의 <b>샤워부스 2.0 DFU</b>(트랩 DN50)로 계상합니다.
+        다만 <b>샤워가 자체 트랩 없이 욕실 바닥배수구(FD)로 배수되는 구성</b>이라면
+        그 부하는 이미 샤워에 계상돼 있으므로 <b>FD 를 중복 입력하지 마십시오</b>.
+        (FD 는 KDS 상 「비상용」이 0.0 DFU 이며, 이 앱은 실제 배수를 받는 경우를 고려해 1.0 으로 둡니다.)<br><br>
+     <b>Q. 구배를 바꾸면 왜 MAIN 관경이 바뀝니까?</b><br>
+     A. 표 4.1-4 가 구배별 표이기 때문입니다. 구배가 완만할수록 유속이 낮아 같은 관경이 받을 수
+        있는 부하가 줄어듭니다.<br><br>
+     <b>Q. 유량 구간표로 정했는데 유속을 왜 또 봅니까?</b><br>
+     A. 구간표가 마찰손실 기준이라 대구경에서 유속이 상한을 넘습니다. 유속이 높으면 유수음·
+        워터해머·침식부식이 생기므로 두 조건을 모두 만족시킵니다.`);
+
+  h+=dtl('6. 이 앱이 다루지 않는 것 (한계)',
+    `· <b>배관 길이·보온 물량</b> — 도면(CAD) 실측의 영역입니다. 부속류는 연결 구조에서 세는 개략치입니다.<br>
+     · <b>통기 표 4.3-1 원표</b> — DFU 개략표 + 1/2 규칙 + 12m 규칙으로 대신합니다.<br>
+     · <b>특수 배수</b> — 주방 그리스, 실험실 폐수, 산성 배수 등은 별도 계통이며 다루지 않습니다.<br>
+     · <b>우수(빗물)</b> — KDS 31 30 35 우수설비의 영역입니다.<br>
+     · <b>150A 초과 급수관</b> — 구간표가 150A 에서 끝납니다. 대형 건물은 별도 검토가 필요합니다.<br>
+     · <b>재질별 내경 차이</b> — 유속 검사는 배관용탄소강관(KS D 3507) 내경을 기준으로 합니다.<br><br>
+     <b>이 계산서는 계획·기본설계 단계의 관경 산정 도구입니다.</b>
+     실시설계에서는 원 기준서로 대조하고, 현장 조건(매설 깊이, 기존 관로 레벨, 통기 방식)을
+     반영해 조정하십시오.`);
+
+  h+=`<div style="font-size:11px;color:var(--text3);margin-top:10px;line-height:1.7">
+     ※ 표는 <b>하한</b>이지 권장값이 아닙니다. 특히 <b>입상관은 나중에 교체가 불가능</b>하므로,
+     유지관리·통기 여건을 고려해 설계자가 상향하는 경우가 많습니다.
+     상향한 경우 그 의도를 계산서에 함께 기재하십시오.</div>`;
+  h+=`</div>`;
+  return h;
 }
 
 // ── 엑셀(CSV) 내보내기: 관경 결과 + 밸브 산출 ──────────────────────────────────
