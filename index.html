@@ -253,6 +253,7 @@ select:focus{outline:none;border-color:var(--accent)}
 <script>
 // ── Constants ──────────────────────────────────────────────────────────────────
 const FX_KEYS = ['wc_v','wc_t','ur_v','ur_t','bas_p','bas_i','shw','bath','sink','cls','fd','wsh'];
+// 기준: WS-001 (cwQ·conn·hot) / DR-001 (dfu·drain·dc) — 근거는 볼트 ~/mep-standards
 const FX = {
   wc_v:  {name:'대변기(세정밸브)', cwQ:15, conn:25, hot:false, dfu:6,  drain:'sew', dc:100},
   wc_t:  {name:'대변기(세정탱크)', cwQ:12, conn:15, hot:false, dfu:6,  drain:'sew', dc:100},
@@ -269,6 +270,7 @@ const FX = {
 };
 
 // ── Pipe tables ────────────────────────────────────────────────────────────────
+// 기준: WS-003 — 전제 허용유속 미확인(볼트 status: 미검증)
 function flowPipe(q){
   if(q<=0)    return 0;
   if(q<=6.7)  return 15;
@@ -283,6 +285,7 @@ function flowPipe(q){
   if(q<=1200) return 125;
   return 150;
 }
+// 기준: DR-003 — 입상관/횡주관 구분 미반영(볼트 status: 미검증)
 function sewPipe(d){
   if(d<=0)   return 0;
   if(d<=160) return 100;
@@ -373,6 +376,7 @@ function zoneFxSummaryCard(z){
 }
 
 // ── Simultaneous use factors ───────────────────────────────────────────────────
+// 기준: DR-002 — DFU에 동시사용률을 또 곱하는 것이 맞는지 검토 중(볼트 status: 미검증)
 function sewSimult(cnt){
   if(cnt<=2)  return 1.0; if(cnt<=5)  return 0.8; if(cnt<=10) return 0.7;
   if(cnt<=20) return 0.6; if(cnt<=30) return 0.55; return 0.5;
@@ -381,6 +385,7 @@ function wstSimult(cnt){
   if(cnt<=3) return 1.0; if(cnt<=6) return 0.8; if(cnt<=10) return 0.7;
   if(cnt<=20) return 0.65; return 0.6;
 }
+// 기준: WS-002
 // 급수·급탕 동시사용계수 — 공조위생 기술데이터북(한미) 자료
 // 기구수 구간은 계단식: 표에 없는 수는 바로 아래 구간값을 따름 (예: 25~31 → 24 기준)
 const SIM_N   =[  1,  2,   3,  4,   5,  6,   7,  8,    9,   10,   11, 12,   13,  14,   15, 16,   17,  18,   19, 20,   21,  22,   23, 24, 32, 40, 50, 70,100];
@@ -430,6 +435,7 @@ function accResult(a){
     sewPipe:sp, wstPipe:wp,
     sewVent:ventPipe(sD,sp), wstVent:ventPipe(wD,wp)});
 }
+// 기준: DR-004
 // 통기관경 — DFU 기반 개략 + 담당 배수관경의 1/2 이상, 최소 32A
 const VENT_SIZES=[32,40,50,65,75,100,125,150];
 function ventPipe(dfu,drainD){
