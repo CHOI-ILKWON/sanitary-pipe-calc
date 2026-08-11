@@ -285,22 +285,60 @@ function flowPipe(q){
   if(q<=1200) return 125;
   return 150;
 }
-// 기준: DR-003 — 입상관/횡주관 구분 미반영(볼트 status: 미검증)
-function sewPipe(d){
-  if(d<=0)   return 0;
-  if(d<=160) return 100;
-  if(d<=360) return 125;
-  if(d<=620) return 150;
-  return 200;
+// 기준: DR-003 — KDS 31 30 25 표 4.1-5 (배수 수평지관과 수직관)
+//   [호칭경, 수평지관, 수직관 분기층3이하, 수직관 분기층3초과 합계, 1개 분기층당]
+//   수직관은 「합계」와 「1개 분기층당」 두 조건을 동시에 만족해야 한다.
+const DR_TBL=[
+  [ 32,    1,    2,    2,    1],
+  [ 40,    3,    4,    8,    2],
+  [ 50,    6,   10,   24,    6],
+  [ 65,   12,   20,   42,    9],
+  [ 75,   20,   48,   72,   20],
+  [100,  160,  240,  500,   90],
+  [125,  360,  540, 1100,  200],
+  [150,  620,  960, 1900,  350],
+  [200, 1400, 2200, 3600,  600],
+  [250, 2500, 3800, 5600, 1000],
+  [300, 3900, 6000, 8400, 1500],
+];
+// 기준: DR-005 — KDS 31 30 25 표 4.1-4 (건물배수 수평주관과 부지배수관)
+//   구배별로 허용 부하단위가 다르다. 0 = 그 구배로는 사용 불가.
+const DR_SLOPES=['1/200','1/100','1/50','1/25'];
+const DR_MAIN_TBL=[
+  [ 75,    0,   36,   42,   50],
+  [100,    0,  180,  216,  250],
+  [125,    0,  390,  480,  575],
+  [150,    0,  700,  840, 1000],
+  [200, 1400, 1600, 1920, 2300],
+  [250, 2500, 2900, 3500, 4200],
+  [300, 3900, 4600, 5600, 6700],
+];
+
+// 수평지관(층별 횡주관·화장실 내부)
+function branchPipe(d){
+  if(d<=0) return 0;
+  for(const r of DR_TBL) if(d<=r[1]) return r[0];
+  return 300;
 }
-function wstPipe(d){
-  if(d<=0)   return 0;
-  if(d<=6)   return 50;
-  if(d<=20)  return 75;
-  if(d<=160) return 100;
-  if(d<=360) return 125;
-  if(d<=620) return 150;
-  return 200;
+const sewPipe=branchPipe, wstPipe=branchPipe;   // 기존 호출부 호환
+
+// 수직관(입상관) — intervals=분기 층수, per=1개 분기층당 최대 부하단위
+function stackPipe(d,intervals,per){
+  if(d<=0) return 0;
+  const few=(intervals||0)<=3;
+  for(const r of DR_TBL){
+    const cap=few?r[2]:r[3];
+    if(d<=cap && (few || (per||0)<=r[4])) return r[0];
+  }
+  return 300;
+}
+
+// 건물배수 수평주관 — slope 는 DR_SLOPES 의 인덱스
+function mainDrainPipe(d,slopeIdx){
+  if(d<=0) return 0;
+  const i=1+(slopeIdx==null?1:slopeIdx);   // 열 오프셋(0번은 호칭경)
+  for(const r of DR_MAIN_TBL) if(r[i]>0 && d<=r[i]) return r[0];
+  return 300;
 }
 function ps(p){ return p ? p+'A' : 'N/A' }
 
@@ -417,11 +455,24 @@ function accAdd(a,r,skipHot){
   a.mCw=Math.max(a.mCw,r.cwPipe); if(!skipHot)a.mHw=Math.max(a.mHw,r.hwPipe);
   a.mSew=Math.max(a.mSew,r.sewPipe); a.mWst=Math.max(a.mWst,r.wstPipe);
 }
-function accResult(a){
+// kind: 'branch'(수평지관·기본) | 'stack'(입상관) | 'main'(건물배수 수평주관)
+// opt : {intervals, perSew, perWst} — 입상관에서 분기 층수·1개 층당 부하
+function accResult(a,kind,opt){
+  kind=kind||'branch'; opt=opt||{};
   const s=suppSimult(a);
   const sD=a.sewRaw, wD=a.wstRaw;          // 기준: DR-002 — DFU 합계를 그대로 쓴다
-  const sp=sD>0?Math.max(sewPipe(sD),a.mSew,100):0;
-  const wp=wD>0?Math.max(wstPipe(wD),a.mWst,50):0;
+  let sRaw,wRaw;
+  if(kind==='stack'){                      // 기준: DR-003 표 4.1-5 수직관 열
+    sRaw=stackPipe(sD,opt.intervals,opt.perSew);
+    wRaw=stackPipe(wD,opt.intervals,opt.perWst);
+  }else if(kind==='main'){                 // 기준: DR-005 표 4.1-4 구배별
+    sRaw=mainDrainPipe(sD,S.drSlope);
+    wRaw=mainDrainPipe(wD,S.drSlope);
+  }else{                                   // 기준: DR-003 표 4.1-5 수평지관 열
+    sRaw=branchPipe(sD); wRaw=branchPipe(wD);
+  }
+  const sp=sD>0?Math.max(sRaw,a.mSew,100):0;
+  const wp=wD>0?Math.max(wRaw,a.mWst,50):0;
   return Object.assign({},a,{
     cwQ:s.cwQ, hwQ:s.hwQ, cwSimultF:s.cwF, hwSimultF:s.hwF,
     cwCnt:a.fvCnt+a.genCnt, hwCnt:a.hwFvCnt+a.hwGenCnt,
@@ -457,9 +508,16 @@ function calcRiser(riser, type){
   const floors=riser.floorIds.map(id=>S[type].floors.find(f=>f.id===id)).filter(Boolean);
   const zones=riser.zoneIds.map(id=>S.zones.find(z=>z.id===id)).filter(Boolean);
   const a=newAcc();
-  for(const fl of floors) accAdd(a,calcFloor(fl,type),false); // 층 결과에 elecHW 이미 반영
-  for(const z of zones)   accAdd(a,calcZone(z),z.elecHW);
-  return Object.assign(accResult(a),{cnt:floors.length+zones.length});
+  // 기준: DR-003 — 수직관은 「합계」와 「1개 분기층당」을 함께 본다.
+  // 분기 층수 = 이 입상관에 붙는 층·존의 수, 1개 층당 부하 = 그중 최대값.
+  let perSew=0, perWst=0;
+  for(const fl of floors){ const fr=calcFloor(fl,type); accAdd(a,fr,false); // 층 결과에 elecHW 이미 반영
+    perSew=Math.max(perSew,fr.sewDFU); perWst=Math.max(perWst,fr.wstDFU); }
+  for(const z of zones){ const zr=calcZone(z); accAdd(a,zr,z.elecHW);
+    perSew=Math.max(perSew,zr.sewDFU); perWst=Math.max(perWst,zr.wstDFU); }
+  const intervals=floors.length+zones.length;
+  return Object.assign(accResult(a,'stack',{intervals,perSew,perWst}),
+    {cnt:intervals,intervals,perSew,perWst});
 }
 
 // ── Zone IDs already allocated (anywhere in the hierarchy for a type) ─────────
@@ -500,7 +558,7 @@ function calcMainType(type){
   // include still-unassigned zones
   const aid=allAssignedZoneIds(type);
   for(const z of S.zones) if(!aid.has(z.id)) accAdd(a,calcZone(z),z.elecHW);
-  const r=accResult(a);
+  const r=accResult(a,'main');   // 기준: DR-005 — 건물배수 수평주관은 구배별 표
   if(S.cwSimultMode==='legacy'){ // 기존 방식: 메인에서만 고정 0.85
     r.cwQ=(a.fvCw+a.genCw)*0.85; r.hwQ=(a.fvHw+a.genHw)*0.85;
     r.cwSimultF=0.85; r.hwSimultF=0.85;
@@ -537,6 +595,7 @@ const S={
   zones:[],
   mainLocation:'bottom', // 'bottom'|'top'
   cwSimultMode:'curve',  // 'curve'(동시사용계수표)|'legacy'(메인 0.85 고정)
+  drSlope:1,             // 건물배수 수평주관 구배 — DR_SLOPES 인덱스 (1 = 1/100)
   cw:{floors:[],risers:[],main:{riserIds:[],floorIds:[],zoneIds:[]}},
   dr:{floors:[],risers:[],main:{riserIds:[],floorIds:[],zoneIds:[]}},
   pressure:{supplyKPa:250,floorH:3.0,material:'stainless',mainLen:10,branchLen:8,zoneLen:3,minResidualKPa:70}
@@ -1095,7 +1154,8 @@ function connMain(elId,type){
                 <span class="badge badge-hw">${ps(rr.hwPipe)} · ${rr.hwQ.toFixed(1)}L/min</span>
                 ${rr.cnt>=2?`<span class="badge badge-na">동시사용계수 ${((rr.cwSimultF||1)*100).toFixed(0)}%</span>`:''}`
               :`<span class="badge badge-sew">${ps(rr.sewPipe)} · ${rr.sewDFU.toFixed(1)}DFU</span>
-                <span class="badge badge-wst">${ps(rr.wstPipe)} · ${rr.wstDFU.toFixed(1)}DFU</span>`
+                <span class="badge badge-wst">${ps(rr.wstPipe)} · ${rr.wstDFU.toFixed(1)}DFU</span>
+                <span class="badge badge-na">수직관 표 · 분기층 ${rr.intervals||0}${(rr.intervals||0)>3?` · 층당 최대 ${Math.max(rr.perSew||0,rr.perWst||0).toFixed(0)}DFU`:''}</span>`
             }
           </div>
           <button class="btn btn-danger btn-sm ml" onclick="delRiser('${type}','${ri.id}')">삭제</button>
@@ -1145,6 +1205,12 @@ function renderMainPipeTab(){
         onchange="S.cwSimultMode=this.value;renderAll()">
         <option value="curve"${S.cwSimultMode!=='legacy'?' selected':''}>동시사용계수표 (공조위생 기술데이터북, 권장)</option>
         <option value="legacy"${S.cwSimultMode==='legacy'?' selected':''}>고정 0.85 (메인만, 기존 방식)</option>
+      </select>
+    </label>
+    <label style="font-size:12px;color:var(--text2)">배수 MAIN 구배:
+      <select style="margin-left:6px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 8px;font-size:12px"
+        onchange="S.drSlope=+this.value;renderAll()">
+        ${DR_SLOPES.map((s,i)=>`<option value="${i}"${(S.drSlope==null?1:S.drSlope)===i?' selected':''}>${s}</option>`).join('')}
       </select>
     </label>
   </div>`;
@@ -1245,7 +1311,9 @@ function renderResult(){
       ` — 세정밸브류(대·소변기) ${cm.fvCnt}개(${(fvSimult(cm.fvCnt)*100).toFixed(2)}%) + 일반기구 ${cm.genCnt}개(${(genSimult(cm.genCnt)*100).toFixed(2)}%)`} ·
     급탕 ${((cm.hwSimultF||0.85)*100).toFixed(1)}%${cm.hwCnt!=null?` (온수기구 ${cm.hwCnt}개)`:''} 적용 ·
     계수표 출처: 공조위생 기술데이터북(한미) — 화장실·층·입상관·MAIN 각 단계에서 그 구간 담당 기구수로 적용 ·
-    통기관경은 DFU 개략 + 담당 배수관경의 1/2 이상 기준 (최소 32A)
+    통기관경은 DFU 개략 + 담당 배수관경의 1/2 이상 기준 (최소 32A) ·
+    배수관경은 KDS 31 30 25 — 횡주관 표 4.1-5(수평지관) / 입상관 표 4.1-5(수직관: 합계 + 1개 분기층당) /
+    MAIN 표 4.1-4(구배 ${DR_SLOPES[S.drSlope==null?1:S.drSlope]}) · DFU 에 동시사용률을 곱하지 않음
   </div>
   ${(()=>{
     const totFx=Object.fromEntries(FX_KEYS.map(k=>[k,0]));
@@ -2593,8 +2661,11 @@ function _printPDF(){
     return `<div class="basis-box"><b>산정 기준</b> |
       급수·급탕: <b>기구 순간유량 합산 → 동시사용계수 적용 → 유량 구간표</b>로 관경 결정.
       동시사용계수 ${sm} |
-      오배수: <b>기구배수부하단위(DFU) 합계</b>로 관경 결정 (KDS 31 30 25 배수통기설비, 4.1.5).
-      DFU 는 사용빈도·동시사용 확률이 이미 반영된 단위이므로 <b>동시사용률을 별도로 곱하지 않음</b> |
+      오배수: <b>기구배수부하단위(DFU) 합계</b>로 관경 결정 (KDS 31 30 25 배수통기설비, 4.1.4·4.1.5).
+      DFU 는 사용빈도·동시사용 확률이 이미 반영된 단위이므로 <b>동시사용률을 별도로 곱하지 않음</b>.
+      층별 횡주관은 <b>표 4.1-5 수평지관</b>, 입상관은 <b>표 4.1-5 수직관</b>(합계 + 1개 분기층당 동시 만족),
+      건물배수 수평주관은 <b>표 4.1-4</b> 구배 <b>${DR_SLOPES[S.drSlope==null?1:S.drSlope]}</b> 기준.
+      오수관 최소 100A, 잡배수관 최소 50A, 상류관경은 하류 최대관경 이상 |
       통기: DFU 개략표 + 담당 배수관경의 1/2 이상, 최소 32A |
       압력손실: <b>Hazen-Williams</b> (PVC C=150, 동관 C=130, STS C=140)
     </div>`;
