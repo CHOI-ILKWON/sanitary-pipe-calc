@@ -279,6 +279,10 @@ const FX = {
 //   ② 유속 상한 검사 — 표가 마찰손실 기준이라 대구경에서 유속이 상한을 넘는다.
 //      (125A 구간 상한 1,200 L/min 에서 1.59 m/s → 통용 기준 1.5 m/s 초과)
 //   두 조건을 모두 만족시킨다. 배수의 「합계 + 1개 층당」과 같은 구조.
+// 호칭경 계열. flowPipe()·applyUpsize()·hwReturnPipe() 가 쓰므로 반드시 이들보다 먼저 선언한다.
+//   (const 는 선언 줄에 도달하기 전 접근하면 TDZ 오류 — 초기 렌더가 이 아래에서 돌면 터진다)
+const PIPE_SIZES_ALL=[15,20,25,32,40,50,65,80,100,125,150];
+function pipeNextSize(d){const i=PIPE_SIZES_ALL.indexOf(d);return(i>=0&&i<PIPE_SIZES_ALL.length-1)?PIPE_SIZES_ALL[i+1]:d;}
 const PIPE_ID={15:16.1,20:21.6,25:27.2,32:35.5,40:41.2,50:52.7,   // 배관용탄소강관 KS D 3507 내경
                65:65.9,80:78.1,100:102.3,125:126.6,150:151.0};
 function pipeVelocity(q_Lmin,d){
@@ -2591,8 +2595,6 @@ function frictionLossKPa(Q_Lmin,D_mm,L_m,mat){
   return J*L_m*9.81;
 }
 function elevLossKPa(h_m){return h_m*9.81;}
-const PIPE_SIZES_ALL=[15,20,25,32,40,50,65,80,100,125,150];
-function pipeNextSize(d){const i=PIPE_SIZES_ALL.indexOf(d);return(i>=0&&i<PIPE_SIZES_ALL.length-1)?PIPE_SIZES_ALL[i+1]:d;}
 
 // ── 기준: WS-005 · 관경↔압력 순환 해석 ────────────────────────────────────────
 //   관경과 압력은 순환 관계다. 유량표로 정한 관경으로 잔압을 계산하고, 기구가 요구하는
