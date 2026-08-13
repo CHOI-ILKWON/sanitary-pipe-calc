@@ -1045,10 +1045,20 @@ function renderEditor(){
           ${S.boilers.map(b=>`<option value="${b.id}"${zone.hwSource===b.id?' selected':''}>${esc(b.name)} (중앙급탕)</option>`).join('')}
           <option value="__new">＋ 새 열원 추가…</option>
         </select>
+        ${(()=>{
+          const b=S.boilers.find(x=>x.id===zone.hwSource);
+          if(!b) return '';
+          const n=boilerZones(b.id).length;
+          const dis=S.boilers.length<=1;
+          return `<button class="btn btn-danger btn-sm" ${dis?'disabled style="opacity:.4;cursor:not-allowed"':''}
+            onclick="delBoiler('${b.id}')"
+            title="${dis?'열원은 최소 1개가 있어야 합니다':esc(b.name)+' 삭제 (묶인 화장실 '+n+'개)'}">열원 삭제</button>`;
+        })()}
         <span style="color:var(--text3);font-size:11px">${zone.hwSource==='elec'?'급탕관 누적 제외 · 온수기 밸브세트 산출':zone.hwSource==='none'?'급탕 계산 제외':'그 열원으로 합산 · 환탕관 산정'}</span>
       </label>
     </div>
     <div class="zone-chips" id="zone-chips-${zone.id}">${chipsHTML(r)}</div>
+    ${hwGroupCard(zone)}
   </div>`;
   h+=renderPipeCanvas(zone);
   el.innerHTML=h;
@@ -1769,6 +1779,40 @@ function renderHelp(){
   el.innerHTML=h;
 }
 
+// ── 기준: HW-001 · 이 화장실이 속한 열원 그룹 카드 (① 개별 화장실 탭) ─────────
+//   ④탭까지 가지 않아도 "누구와 묶여 있고 그 결과 관경이 얼마인지"를 그 자리에서 본다.
+function hwGroupCard(zone){
+  const box=(inner,bd)=>`<div style="margin-top:8px;padding:8px 10px;background:var(--surface2);
+    border:1px solid ${bd||'var(--border)'};border-radius:6px;font-size:11.5px;line-height:1.7">${inner}</div>`;
+  if(zone.hwSource==='none')
+    return box(`<b>급탕 없음</b> <span style="color:var(--text3)">— 이 화장실은 급탕 계산에서 제외됩니다.</span>`);
+  if(zone.hwSource==='elec'){
+    const r=calcZone(zone);
+    return box(`<b>개별 순간온수기</b> <span style="color:var(--text3)">— 중앙급탕 누적에서 빠지고 환탕관이 없습니다.</span>
+      ${r.hwQ>0?`<br>이 화장실 급탕 유량 <b>${r.hwQ.toFixed(1)} L/min</b> · 온수기 이후 급탕관 <b>${ps(r.hwPipe)}</b>
+      <span style="color:var(--text3)">(온수기 용량은 이 앱의 범위가 아닙니다 — 이 유량으로 선정하세요)</span>`:''}`);
+  }
+  const b=S.boilers.find(x=>x.id===zone.hwSource);
+  if(!b) return '';
+  const g=calcBoiler(b.id);
+  const names=g.zones.map(z=>z.id===zone.id
+    ? `<b style="color:var(--accent)">${esc(z.name)}</b>`
+    : `<span style="color:var(--text2)">${esc(z.name)}</span>`).join(' <span style="color:var(--text3)">·</span> ');
+  return box(`
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap">
+      <span><b>${esc(b.name)}</b> <span style="color:var(--text3)">중앙급탕 · 화장실 ${g.cnt}개소</span></span>
+      <span style="font-size:11px">
+        급탕 공급관 <b style="color:var(--warn)">${ps(g.supply)}</b>
+        <span style="color:var(--text3)">/</span>
+        환탕관 <b style="color:var(--accent2)">${ps(g.ret)}</b></span>
+    </div>
+    <div style="margin-top:4px">${names}</div>
+    <div style="margin-top:3px;color:var(--text3);font-size:10.5px">
+      합산 급탕 유량 ${g.hwQ.toFixed(1)} L/min (동시사용 ${((g.hwSimultF||1)*100).toFixed(1)}%) ·
+      환탕관은 급탕관 −${S.hwReturnStep??1}단계(관행, 최소 20A)
+    </div>`, 'var(--accent)');
+}
+
 // ── 기준: HW-001 · 급탕 열원 그룹 패널 (④ MAIN관 탭) ──────────────────────────
 function hwSourcePanel(){
   const elecZ=S.zones.filter(z=>z.hwSource==='elec');
@@ -2393,11 +2437,16 @@ function addBoilerUI(){
 }
 function setBoilerName(id,v){const b=S.boilers.find(b=>b.id===id);if(b){b.name=v;persist();}}
 function delBoiler(id){
-  if(S.boilers.length<=1){alert('열원은 최소 1개가 있어야 합니다.');return;}
+  if(S.boilers.length<=1){alert('열원은 최소 1개가 있어야 합니다.\n\n중앙급탕을 쓰지 않는다면 각 화장실의 급탕 열원을\n「개별 순간온수기」 또는 「급탕 없음」으로 바꾸세요.');return;}
+  const b=S.boilers.find(x=>x.id===id); if(!b) return;
   const used=boilerZones(id);
-  if(used.length&&!confirm(`이 열원에 ${used.length}개 화장실이 묶여 있습니다.\n삭제하면 첫 번째 열원으로 옮겨집니다. 계속할까요?`)) return;
-  S.boilers=S.boilers.filter(b=>b.id!==id);
-  for(const z of used) z.hwSource=S.boilers[0].id;
+  const to=S.boilers.find(x=>x.id!==id);      // 옮겨갈 열원
+  const msg=used.length
+    ? `「${b.name}」을 삭제합니다.\n\n이 열원에 묶인 화장실 ${used.length}개가 「${to.name}」으로 옮겨집니다:\n  · ${used.map(z=>z.name).join('\n  · ')}\n\n계속할까요?`
+    : `「${b.name}」을 삭제합니다. (묶인 화장실 없음)`;
+  if(!confirm(msg)) return;
+  S.boilers=S.boilers.filter(x=>x.id!==id);
+  for(const z of used){ z.hwSource=S.boilers[0].id; z.elecHW=false; }
   renderAll();
 }
 
