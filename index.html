@@ -1043,6 +1043,7 @@ function renderEditor(){
           <option value="none"${zone.hwSource==='none'?' selected':''}>급탕 없음</option>
           <option value="elec"${zone.hwSource==='elec'?' selected':''}>개별 순간온수기 (환탕 없음)</option>
           ${S.boilers.map(b=>`<option value="${b.id}"${zone.hwSource===b.id?' selected':''}>${esc(b.name)} (중앙급탕)</option>`).join('')}
+          <option value="__new">＋ 새 열원 추가…</option>
         </select>
         <span style="color:var(--text3);font-size:11px">${zone.hwSource==='elec'?'급탕관 누적 제외 · 온수기 밸브세트 산출':zone.hwSource==='none'?'급탕 계산 제외':'그 열원으로 합산 · 환탕관 산정'}</span>
       </label>
@@ -1774,7 +1775,7 @@ function hwSourcePanel(){
   const noneZ=S.zones.filter(z=>z.hwSource==='none');
   let h=`<div class="section"><div class="fr" style="align-items:center;gap:12px;margin-bottom:8px">
     <span class="section-title" style="margin:0">급탕 열원 (중앙급탕 · 환탕)</span>
-    <button class="btn btn-sm" onclick="addBoiler()">+ 열원 추가</button>
+    <button class="btn btn-sm" onclick="addBoilerUI()">+ 열원 추가</button>
     <label style="font-size:11.5px;color:var(--text2)">환탕관 축소:
       <select style="margin-left:4px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-size:11.5px"
         onchange="S.hwReturnStep=+this.value;renderAll()">
@@ -1819,7 +1820,8 @@ function hwSourcePanel(){
     </div>`;
   }
   h+=`<div style="font-size:10.5px;color:var(--text3);margin-top:8px;line-height:1.6;padding:8px;background:var(--surface2);border-radius:6px">
-    ※ 열원 지정은 <b>① 개별 화장실</b> 탭의 각 화장실에서 선택합니다.<br>
+    ※ 열원 지정과 <b>새 열원 만들기</b>는 <b>① 개별 화장실</b> 탭에서 바로 할 수 있습니다
+       (드롭다운의 「＋ 새 열원 추가…」). 여기는 <b>결과 확인용</b>입니다.<br>
     ※ 환탕관이 급탕관보다 작은 이유 — 환탕관이 나르는 것은 급탕 사용량이 아니라
        <b>배관 열손실을 보충하는 순환수량</b>(통상 온도강하 5℃ 기준)이며, 급탕 설계유량의 1/5~1/10 수준입니다.<br>
     ※ 정식 순환수량 산정에는 <b>배관 실장·보온 두께</b>가 필요합니다. 이 앱은 배관 길이를 다루지 않으므로
@@ -2361,19 +2363,33 @@ function setZoneName(id,v){const z=findZone(id);if(z){z.name=v;renderSidebar();}
 function setZoneFloor(id,v){const z=findZone(id);if(z){z.floor=v;renderSidebar();}}
 function setZoneElecHW(id,v){const z=findZone(id);if(z){z.elecHW=v;renderEditor();}}
 // 기준: HW-001 — 존의 급탕 열원 지정. elecHW 는 기존 계산 로직 호환용으로 함께 갱신한다.
+//   드롭다운에서 바로 새 열원을 만들 수 있다(④탭까지 갔다 오지 않도록).
 function setZoneHwSource(id,v){
   const z=findZone(id); if(!z) return;
+  if(v==='__new'){
+    renderEditor();   // 취소해도 셀렉트가 원래 값으로 돌아오도록 먼저 되돌린다
+    showModal('열원 이름 (예: 3층 보일러)','새 급탕 열원 추가',name=>{
+      const b=addBoiler(name);
+      z.hwSource=b.id; z.elecHW=false;
+      renderAll();
+    });
+    return;
+  }
   z.hwSource=v;
   z.elecHW=(v==='elec'||v==='none');
   renderAll();
 }
 // ── 보일러(열원) 관리 ──────────────────────────────────────────────────────────
-function addBoiler(){
+function addBoiler(name){
   const n=S.boilers.length+1;
   let id='B'+n, k=n;
   while(S.boilers.some(b=>b.id===id)){ k++; id='B'+k; }
-  S.boilers.push({id,name:'보일러 '+id});
-  renderAll();
+  const b={id,name:(name||'').trim()||('보일러 '+id)};
+  S.boilers.push(b);
+  return b;
+}
+function addBoilerUI(){
+  showModal('열원 이름 (예: 3층 보일러)','새 급탕 열원 추가',name=>{ addBoiler(name); renderAll(); });
 }
 function setBoilerName(id,v){const b=S.boilers.find(b=>b.id===id);if(b){b.name=v;persist();}}
 function delBoiler(id){
