@@ -1524,6 +1524,9 @@ function zoneFittings(z){
   return res;
 }
 
+// 기준: AC-034 — 배수 방식. 오수와 잡배수를 나누는 것은 막히는 방식이 달라
+// 한쪽이 막혀도 다른 쪽이 살게 하기 위함이다 (AC-034 34.3.4). 청소구도 계통별로 둔다.
+// 집수정과 배수펌프는 이 앱에 없다 — 지하층이 있으면 앱 밖에서 산정한다 (34.5.1)
 // 배수 부속 개략 (오수·잡배수) — 기구 접속 TY + 청소구(C.O)
 function zoneDrainFittings(z){
   const t=zoneFxTotals(z), zr=calcZone(z);
