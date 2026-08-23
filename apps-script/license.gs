@@ -68,13 +68,17 @@ const CONFIG = {
 const SHEETS = {
   LICENSE: '라이선스',
   CUSTOMER: '고객',
-  ORDER: '구매신청'
+  ORDER: '구매신청',
+  SUBSCRIBE: '구독'
 };
 
 const HEADERS = {
   LICENSE: ['이메일', '앱', '유형', '발급일', '만료일', '메모'],
   CUSTOMER: ['이메일', '이름', '회사', '연차', '직무', '이전불편', '불편상세', '유입경로', '수신동의', '연장적용', '갱신일'],
-  ORDER: ['신청일시', '이메일', '신청앱', '금액', '입금자명', '세금계산서', '메모', '처리상태']
+  ORDER: ['신청일시', '이메일', '신청앱', '금액', '입금자명', '세금계산서', '메모', '처리상태'],
+  // 무료 앱에서 "새 기능 알림 받기" 로 모이는 명단.
+  // 로그인이 없으므로 라이선스와 섞지 않고 따로 쌓는다.
+  SUBSCRIBE: ['신청일시', '이메일', '앱', '유입경로', '수신동의', '메모']
 };
 
 // 「고객」 시트의 열 위치(0부터). 열을 추가하거나 옮기면 여기만 고치면 된다.
@@ -120,7 +124,12 @@ function handle(p) {
 
     if (action === 'ping') {
       // version 은 배포가 실제로 갱신됐는지 밖에서 확인하는 용도다. 코드를 고치면 같이 올린다.
-      return json({ ok: true, version: '1.2', trialDays: CONFIG.TRIAL_DAYS, now: new Date().toISOString() });
+      return json({ ok: true, version: '1.3', trialDays: CONFIG.TRIAL_DAYS, now: new Date().toISOString() });
+    }
+
+    // 구독 신청은 로그인이 없다 — 무료 앱에서 이메일만 받는다.
+    if (action === 'subscribe') {
+      return json(subscribe_(p));
     }
 
     // 구버전 앱 호환 경로.
@@ -428,6 +437,44 @@ function requestPurchase_(email, p) {
 }
 
 // ═══════════════════════════════════════════════════════════
+//  구독 신청 (무료 앱 · 로그인 없음)
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * 무료 앱에서 "새 기능 알림 받기" 로 들어온 이메일을 받는다.
+ * 로그인을 요구하지 않는다 — 무료 앱의 존재 이유가 마찰 0 이기 때문이다.
+ * 그래서 이메일이 진짜인지는 확인할 수 없다. 형식만 보고 받는다.
+ * 같은 이메일이 같은 앱으로 또 오면 새 줄을 만들지 않는다.
+ *
+ * 알림 메일은 보내지 않는다. 구독이 늘면 하루 100통 한도에 금방 닿는다.
+ */
+function subscribe_(p) {
+  var email = String(p.email || '').trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(email)) {
+    return { ok: false, error: 'email', message: '이메일 주소를 다시 확인해 주세요.' };
+  }
+
+  var appId = normalizeAppId_(p.appId);
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sh = sheet_(SHEETS.SUBSCRIBE);
+    var values = sh.getDataRange().getValues();
+    for (var i = 1; i < values.length; i++) {
+      if (String(values[i][1]).trim().toLowerCase() === email &&
+          String(values[i][2]).trim().toLowerCase() === appId) {
+        return { ok: true, already: true, message: '이미 신청하신 주소입니다. 소식이 나가면 보내드리겠습니다.' };
+      }
+    }
+    sh.appendRow([new Date(), email, appId, str_(p.channel, 60), 'Y', str_(p.memo, 200)]);
+    return { ok: true, message: '신청되었습니다. 새 기능이 나오면 알려드리겠습니다.' };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
 //  시트 준비 / 기존 데이터 이관
 // ═══════════════════════════════════════════════════════════
 
@@ -451,6 +498,7 @@ function ensureSheets_() {
   ensureSheet_(ss, SHEETS.LICENSE, HEADERS.LICENSE);
   ensureSheet_(ss, SHEETS.CUSTOMER, HEADERS.CUSTOMER);
   ensureSheet_(ss, SHEETS.ORDER, HEADERS.ORDER);
+  ensureSheet_(ss, SHEETS.SUBSCRIBE, HEADERS.SUBSCRIBE);
 }
 
 function ensureSheet_(ss, name, headers) {
@@ -680,6 +728,7 @@ function onOpen() {
     .addItem('수신 동의자 목록 보기', 'menuSubscribers')
     .addItem('유입경로 집계 보기', 'menuChannels')
     .addItem('이전 불편 집계 + 실제 문장 보기', 'menuPains')
+    .addItem('무료 앱 구독자 보기', 'menuSubscribeList')
     .addSeparator()
     .addItem('시트 준비 / 기존 승인자 이관', 'setup')
     .addToUi();
@@ -785,6 +834,24 @@ function menuPains() {
   SpreadsheetApp.getUi().alert(
     '이전에 불편했던 것\n\n' + (lines.join('\n') || '아직 자료가 없습니다.') +
     (quotes.length ? '\n\n─── 직접 쓴 문장 ───\n' + quotes.join('\n') : ''));
+}
+
+/** 무료 앱에서 모인 구독자. 앱을 유료화할 때 "먼저 쓰신 분" 명단이기도 하다. */
+function menuSubscribeList() {
+  var values = sheet_(SHEETS.SUBSCRIBE).getDataRange().getValues();
+  var byApp = {}, all = {};
+  for (var i = 1; i < values.length; i++) {
+    var app = String(values[i][2] || '(미상)').trim();
+    byApp[app] = (byApp[app] || 0) + 1;
+    all[String(values[i][1]).trim().toLowerCase()] = true;
+  }
+  var lines = Object.keys(byApp).sort(function (a, b) { return byApp[b] - byApp[a]; })
+    .map(function (k) { return k + ' — ' + byApp[k] + '명'; });
+  var NL = String.fromCharCode(10);
+  SpreadsheetApp.getUi().alert(
+    '무료 앱 구독자' + NL + NL +
+    '총 ' + Object.keys(all).length + '명 (중복 제외)' + NL + NL +
+    (lines.join(NL) || '아직 없습니다.'));
 }
 
 function menuChannels() {

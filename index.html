@@ -674,7 +674,9 @@ function newZone(name,floor=''){
 const S={
   projectName:'새 프로젝트',
   zones:[],
-  mainLocation:'bottom', // 'bottom'|'top'
+  mainLocation:'bottom', // 기준: AC-031 — 급수 방식. 부스터펌프식(bottom)이 표준.
+                         // 이 선택이 위치수두의 부호를 바꾸므로 관경까지 달라진다 (AC-031 31.2.3)
+                         // 'bottom'|'top'
   cwSimultMode:'curve',  // 'curve'(동시사용계수표)|'legacy'(메인 0.85 고정)
   drSlope:1,             // 건물배수 수평주관 구배 — DR_SLOPES 인덱스 (1 = 1/100)
   cwVmax:1.5,            // 급수·급탕 허용유속 상한 m/s (기준: WS-003)
