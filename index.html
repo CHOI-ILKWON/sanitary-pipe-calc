@@ -727,7 +727,11 @@ function normalizeState(){
   if(!S.pressure) S.pressure={supplyKPa:250,floorH:3.0,material:'stainless',mainLen:10,branchLen:8,zoneLen:3,minResidualKPa:55,fittingFactor:1.3};
   if(S.pressure.zoneLen==null) S.pressure.zoneLen=3;
   if(!S.pressure.material) S.pressure.material='stainless';
-  if(S.pressure.fittingFactor==null) S.pressure.fittingFactor=1.3;   // 기준: WS-005
+  // 기준: WS-006 Rule 4 — 이음쇠 등가장 계수. 학회 표 5.8(ASHRAE Fundamentals 2008)의 부속별
+  //   상당길이로 5층 사무동을 계산하면 계통 전체가 1.40 이다 (WS-006 3.4).
+  //   종전 1.3 은 출처 없이 「x1.3~1.5 적용 권장」 안내문의 아래쪽을 취한 값이었다.
+  //   학회 3.2.1 의 관로계수 K=2.0~3.0 은 부속 개수를 모를 때의 계획 어림값이라 쓰지 않는다.
+  if(S.pressure.fittingFactor==null) S.pressure.fittingFactor=1.4;   // 기준: WS-006
   // 기준: HW-001 — 급탕 열원 그룹. 구버전의 elecHW(불리언)를 hwSource 로 승격한다.
   //   elecHW=true  → 'elec' (개별 순간온수기, 환탕 없음)
   //   elecHW=false → 첫 보일러 그룹 (중앙급탕)
@@ -2664,7 +2668,7 @@ function calcAllPressurePaths(type){
   const P=S.pressure,isCW=type==='cw',isTop=S.mainLocation==='top';
   const mat=P.material,floorH=P.floorH,mainLen=P.mainLen,branchLen=P.branchLen,zoneLen=P.zoneLen||3;
   // 기준: WS-005 — 이음쇠 상당길이(등가장) 계수. 직관 실장에 곱해 부속 손실을 반영한다.
-  const ff=(P.fittingFactor==null?1.3:P.fittingFactor);
+  const ff=(P.fittingFactor==null?1.4:P.fittingFactor);
   const risers=S[type].risers,floors=S[type].floors;
   const mainR=calcMainType(type);
   const mainQ=isCW?mainR.cwQ:mainR.hwQ;
@@ -2974,7 +2978,7 @@ function renderPressureTab(){
   if(S.cw.risers.length){
     const P=S.pressure,isTop=S.mainLocation==='top';
     const mat=P.material,zoneLen=P.zoneLen||3;
-    const ff=(P.fittingFactor==null?1.3:P.fittingFactor);   // 기준: WS-005 등가장 계수
+    const ff=(P.fittingFactor==null?1.4:P.fittingFactor);   // 기준: WS-005 등가장 계수
     const mainR=calcMainType('cw');
     const mainQ=mainR.hwQ,mainD=mainR.hwPipe;
     const mainFriction=frictionLossKPa(mainQ,mainD,P.mainLen*ff,mat);
