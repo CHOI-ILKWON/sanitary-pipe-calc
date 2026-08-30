@@ -2686,7 +2686,11 @@ function solvePressureUpsize(type){
     if(!bumped) break;    // 더 올릴 곳이 없다 — 공급압력 자체가 부족한 경우
   }
   if(changed) persist();
-  return changed;
+  // 기준: WS-005 Rule 5 — 상향 후에도 남은 미달 경로를 함께 돌려준다.
+  //   마찰은 전체 손실의 2~3% 뿐이라 관경으로 풀리는 부족은 경계선 근처뿐이다.
+  //   크게 모자라면 펌프 양정이나 조닝으로 풀어야 하며, 그것을 알려야 한다.
+  const left=calcAllPressurePaths(type).filter(p=>!p.ok);
+  return {changed, unresolved:left.length, worst:left.length?Math.min.apply(null,left.map(p=>p.residual-p.reqKPa)):0};
 }
 function clearPressureUpsize(type){
   let n=0;
@@ -2699,10 +2703,23 @@ function clearPressureUpsize(type){
   return n;
 }
 function runUpsize(){
-  const n=solvePressureUpsize('cw');
+  const r=solvePressureUpsize('cw');
   renderAll();
-  alert(n?`잔압을 만족하도록 ${n}단계 상향했습니다.\n각 구간의 상향 내역은 아래 표에서 확인하세요.`
-         :'상향할 구간이 없습니다. (이미 만족하거나, 공급압력 자체가 부족합니다)');
+  // 기준: WS-005 Rule 5 — 상향으로 풀렸는지 아직 모자란지를 구분해 알린다.
+  //   종전에는 상향 단계수만 보고 「만족하도록 상향했습니다」라 하여, 4단계까지 올려도
+  //   여전히 미달인 경우에 사실과 다른 안내를 했다 (2026-08-30 정정).
+  if(r.unresolved){
+    alert((r.changed?r.changed+'단계 상향했으나 ':'')
+      +'잔압이 부족한 경로가 '+r.unresolved+'개 남았습니다.\n'
+      +'가장 부족한 곳이 '+Math.abs(r.worst).toFixed(0)+' kPa 모자랍니다.\n\n'
+      +'관경 상향으로는 풀리지 않습니다 — 마찰은 전체 손실의 2~3% 뿐이고\n'
+      +'나머지는 물을 위로 올리는 위치수두입니다.\n\n'
+      +'펌프 양정을 올리거나 급수 계통을 조닝(감압)하십시오.');
+  } else if(r.changed){
+    alert('잔압을 만족하도록 '+r.changed+'단계 상향했습니다.\n각 구간의 상향 내역은 아래 표에서 확인하세요.');
+  } else {
+    alert('상향할 구간이 없습니다. 모든 경로가 이미 필요압력을 만족합니다.');
+  }
 }
 function resetUpsize(){
   const n=clearPressureUpsize('cw');
