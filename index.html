@@ -1461,6 +1461,24 @@ function renderResult(){
 }
 
 // ── Tab 7: 밸브 산출 (화장실 말단) ──────────────────────────────────────────────
+// 기준: WS-006 Rule 1 — 수격방지기는 「세정밸브가 달린 막다른 가지」마다 1개.
+//   학회 3.3.7 (1) 은 위치만 정한다 — 「급폐쇄형 수도꼭지 사용개소」에 「토출측 1 m 이내」.
+//   개수를 정한 문헌은 없다(PDI-WH201 미확보, WS-006 11 a). 충격은 가지마다 따로 나므로
+//   막다른 끝마다 하나를 둔다. 방지기는 어차피 막다른 끝에 수직으로 다는 물건이다.
+//   종전에는 「존별 1개, 세정밸브 6개 초과 시 2개」였고 그 6 에 근거가 없었다 (2026-08-30 정정).
+function flushDeadEnds(z){
+  const nodes=z.pipe&&z.pipe.nodes, root=z.pipe&&z.pipe.rootId;
+  if(!nodes||!root) return 0;
+  let n=0;
+  (function walk(id,seen){
+    const d=nodes[id]; if(!d) return;
+    const has=seen||(d.type==='fixture'&&(d.fxKey==='wc_v'||d.fxKey==='ur_v'));
+    if(d.mainNext) walk(d.mainNext,has);
+    else if(has) n++;                       // 막다른 끝 — 그 경로에 세정밸브가 있으면 1개소
+    if(d.branchNext) walk(d.branchNext,has); // 가지는 따로 센다
+  })(root,false);
+  return n;
+}
 function zoneValves(z){
   const t=zoneFxTotals(z);
   const zr=calcZone(z);
@@ -1481,7 +1499,11 @@ function zoneValves(z){
   const flush=(t.wc_v||0)+(t.ur_v||0);
   add('세정밸브(플러시)','대·소변기 세정밸브',t.wc_v?'25A':'20A',flush,'기구 부속 — 수량 확인용');
   // 소형 수격방지기 — 세정밸브 계열이 있는 존의 분기 말단
-  if(flush) add('수격방지기(WHA)','급수 분기 말단 수직 설치','20A',flush>6?2:1,'세정밸브 급속폐쇄 충격 흡수 (6개 초과 시 중간+말단 2개)');
+  if(flush){
+    const whaN=Math.max(1,flushDeadEnds(z));   // 기준: WS-006 Rule 1
+    add('수격방지기(WHA)','급수 분기 말단 수직 설치','20A',whaN,
+        `세정밸브가 달린 막다른 가지 ${whaN}개소 × 1 — 급속폐쇄 충격 흡수 (학회 3.3.7, 기구 1m 이내)`);
+  }
   // 전기온수기 세트
   if(z.elecHW&&zr.hwQ>0){
     add('볼밸브','전기온수기 냉수측 차단','15A',1,'차단 → 체크 → 온수기 순서로 설치');
