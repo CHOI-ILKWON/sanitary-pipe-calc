@@ -708,7 +708,7 @@ const S={
   dr:{floors:[],risers:[],main:{riserIds:[],floorIds:[],zoneIds:[]}},
   boilers:[{id:'B1',name:'보일러 B1'}],   // 기준: HW-001 — 중앙급탕 열원 그룹
   hwReturnStep:1,        // 환탕관 축소 단계 (급탕관 대비), 기준: HW-001
-  pressure:{supplyKPa:250,floorH:3.0,material:'stainless',mainLen:10,branchLen:8,zoneLen:3,minResidualKPa:55,fittingFactor:1.3}
+  pressure:{supplyKPa:250,floorH:3.0,material:'stainless',mainLen:10,branchLen:8,zoneLen:3,minResidualKPa:55,fittingFactor:1.4}
 };
 let activeZone=null, activeTab=0;
 
@@ -748,14 +748,17 @@ function normalizeState(){
   }
   if(!S.mainLocation) S.mainLocation='bottom';
   if(!S.cwSimultMode) S.cwSimultMode='curve';
-  if(!S.pressure) S.pressure={supplyKPa:250,floorH:3.0,material:'stainless',mainLen:10,branchLen:8,zoneLen:3,minResidualKPa:55,fittingFactor:1.3};
+  if(!S.pressure) S.pressure={supplyKPa:250,floorH:3.0,material:'stainless',mainLen:10,branchLen:8,zoneLen:3,minResidualKPa:55,fittingFactor:1.4};
   if(S.pressure.zoneLen==null) S.pressure.zoneLen=3;
   if(!S.pressure.material) S.pressure.material='stainless';
   // 기준: WS-006 Rule 4 — 이음쇠 등가장 계수. 학회 표 5.8(ASHRAE Fundamentals 2008)의 부속별
   //   상당길이로 5층 사무동을 계산하면 계통 전체가 1.40 이다 (WS-006 3.4).
   //   종전 1.3 은 출처 없이 「x1.3~1.5 적용 권장」 안내문의 아래쪽을 취한 값이었다.
   //   학회 3.2.1 의 관로계수 K=2.0~3.0 은 부속 개수를 모를 때의 계획 어림값이라 쓰지 않는다.
-  if(S.pressure.fittingFactor==null) S.pressure.fittingFactor=1.4;   // 기준: WS-006
+  if(S.pressure.fittingFactor==null) S.pressure.fittingFactor=1.4;   // 기준: WS-006 Rule 4 — 옛 저장본 보정
+  // 2026-09-06: 기본값이 세 곳에서 1.3 으로 남아 있었다. WS-006 에서 1.4 로 올리기로 했는데
+  //   폴백에만 들어가고 기본값에는 안 들어가, 새 프로젝트는 1.3 · 옛 저장본만 1.4 로 거꾸로였다.
+  //   기본값·표시 폴백·계산 폴백을 모두 1.4 로 맞췄다. 잔압 차이는 10층에서 0.5 kPa 이다.
   // 기준: HW-001 — 급탕 열원 그룹. 구버전의 elecHW(불리언)를 hwSource 로 승격한다.
   //   elecHW=true  → 'elec' (개별 순간온수기, 환탕 없음)
   //   elecHW=false → 첫 보일러 그룹 (중앙급탕)
@@ -2574,7 +2577,7 @@ function resetAll(){
   S.cwSimultMode='curve';
   S.cw={floors:[],risers:[],main:{riserIds:[],floorIds:[],zoneIds:[]}};
   S.dr={floors:[],risers:[],main:{riserIds:[],floorIds:[],zoneIds:[]}};
-  S.pressure={supplyKPa:250,floorH:3.0,material:'stainless',mainLen:10,branchLen:8,zoneLen:3,minResidualKPa:55,fittingFactor:1.3};
+  S.pressure={supplyKPa:250,floorH:3.0,material:'stainless',mainLen:10,branchLen:8,zoneLen:3,minResidualKPa:55,fittingFactor:1.4};
   _id=1; activeZone=null;
   try{localStorage.removeItem(LS_KEY);}catch{}
   document.getElementById('projectName').value='새 프로젝트';
@@ -2902,7 +2905,7 @@ function renderPressurePathResult(paths,type,isCW){
   </tr>
   <tr><td colspan="5" style="padding:1px 5px;font-size:10px;color:${resCol}">${critical.ok?`✓ 필요압력 ${critical.reqKPa}kPa 충족`:`⚠ 필요압력 ${critical.reqKPa}kPa 미달 — 관경 상향 필요`}</td></tr>
   </table>
-  <div style="font-size:10px;color:var(--text3);margin-top:6px;text-align:right">단위: kPa · 이음쇠 등가장 ×${(P.fittingFactor??1.3).toFixed(2)} 반영 · 필요압력은 KDS 31 30 15 표 4.3-1</div>
+  <div style="font-size:10px;color:var(--text3);margin-top:6px;text-align:right">단위: kPa · 이음쇠 등가장 ×${(P.fittingFactor??1.4).toFixed(2)} 반영 · 필요압력은 KDS 31 30 15 표 4.3-1</div>
   </div>`;
 
   // All paths summary
@@ -2980,7 +2983,7 @@ function renderPressureTab(){
     <div style="margin-bottom:6px"><div style="font-size:10.5px;color:var(--text2);margin-bottom:3px">최소 잔압 기준 (kPa)</div>
       ${inp('minResidualKPa',P.minResidualKPa,30,200,5,'건물 내 기구 중 가장 높은 값 적용')}</div>
     <div style="margin-bottom:6px"><div style="font-size:10.5px;color:var(--text2);margin-bottom:3px">이음쇠 등가장 계수</div>
-      ${inp('fittingFactor',P.fittingFactor??1.3,1.0,2.0,0.05,'직관 실장 × 계수 — 엘보·티·밸브의 상당길이 반영 (실무 1.3~1.5)')}</div>
+      ${inp('fittingFactor',P.fittingFactor??1.4,1.0,2.0,0.05,'직관 실장 × 계수 — 엘보·티·밸브의 상당길이 반영 (실무 1.3~1.5)')}</div>
     <div style="display:flex;gap:6px;margin:12px 0 4px">
       <button class="btn btn-sm" style="flex:1" onclick="runUpsize()">잔압 부족 구간 자동 상향</button>
       <button class="btn btn-sm btn-danger" onclick="resetUpsize()">해제</button>
@@ -3015,7 +3018,7 @@ function renderPressureTab(){
     </div>
     <div style="font-size:10px;color:var(--text3);margin-top:10px;line-height:1.6;padding:8px;background:var(--surface2);border-radius:6px">
       ※ 배관 길이는 실제 도면 기준으로 수정 필요<br>
-      ※ 이음쇠 상당길이는 위 <b>등가장 계수 ×${(P.fittingFactor??1.3).toFixed(2)}</b> 로 반영됨<br>
+      ※ 이음쇠 상당길이는 위 <b>등가장 계수 ×${(P.fittingFactor??1.4).toFixed(2)}</b> 로 반영됨<br>
       ※ 급탕은 급수 계산 기준으로 참고
     </div>
   </div>
@@ -3239,7 +3242,7 @@ function _printPDF(){
       오수관 최소 100A, 잡배수관 최소 50A, 상류관경은 하류 최대관경 이상 |
       통기: DFU 개략표 + 담당 배수관경의 1/2 이상, 최소 32A |
       압력손실: <b>Hazen-Williams</b> (PVC C=150, 동관 C=130, STS C=140),
-      이음쇠 등가장 <b>×${(S.pressure.fittingFactor??1.3).toFixed(2)}</b> |
+      이음쇠 등가장 <b>×${(S.pressure.fittingFactor??1.4).toFixed(2)}</b> |
       말단 필요압력: <b>KDS 31 30 15 표 4.3-1</b> 기구별 값 적용
       (세정밸브 100 · 샤워 70 · 그 외 55 kPa). 잔압 미달 시 관경을 상향해 재계산
     </div>`;
