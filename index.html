@@ -283,11 +283,14 @@ const FX = {
   wc_t:  {name:'대변기(세정탱크)', cwQ:11, conn:15, hot:false, dfu:4,  drain:'sew', dc:100, minKPa:55},
   ur_v:  {name:'소변기(세정밸브)', cwQ:45, conn:20, hot:false, dfu:4,  drain:'sew', dc:75,  minKPa:100},
   ur_t:  {name:'소변기(세정탱크)', cwQ:6,  conn:15, hot:false, dfu:4,  drain:'sew', dc:75,  minKPa:55},
-  bas_p: {name:'세면기(공중용)',   cwQ:6,  conn:15, hot:true,  dfu:1,  drain:'wst', dc:40,  minKPa:55},
-  bas_i: {name:'세면기(개인용)',   cwQ:6,  conn:15, hot:true,  dfu:1,  drain:'wst', dc:40,  minKPa:55},
-  shw:   {name:'샤워기',           cwQ:11, conn:15, hot:true,  dfu:2,  drain:'wst', dc:50,  minKPa:70},
-  bath:  {name:'욕조',             cwQ:15, conn:20, hot:true,  dfu:2,  drain:'wst', dc:40,  minKPa:55},
-  sink:  {name:'주방싱크',         cwQ:9,  conn:15, hot:true,  dfu:2,  drain:'wst', dc:50,  minKPa:55},
+  // 기준: HW-001 — 혼합수전의 급탕 분담률. 기구 전체유량의 75% 만 급탕관이 진다.
+  //   냉수와 온수를 섞어 쓰므로 급탕관에 전량을 넣으면 과대해진다.
+  //   hotShare 1.0 은 온수전용 기구, 0 은 급탕 없음.
+  bas_p: {name:'세면기(공중용)',   cwQ:6,  conn:15, hot:true,  hotShare:0.75, dfu:1,  drain:'wst', dc:40,  minKPa:55},
+  bas_i: {name:'세면기(개인용)',   cwQ:6,  conn:15, hot:true,  hotShare:0.75, dfu:1,  drain:'wst', dc:40,  minKPa:55},
+  shw:   {name:'샤워기',           cwQ:11, conn:15, hot:true,  hotShare:0.75, dfu:2,  drain:'wst', dc:50,  minKPa:70},
+  bath:  {name:'욕조',             cwQ:15, conn:20, hot:true,  hotShare:0.75, dfu:2,  drain:'wst', dc:40,  minKPa:55},
+  sink:  {name:'주방싱크',         cwQ:9,  conn:15, hot:true,  hotShare:0.75, dfu:2,  drain:'wst', dc:50,  minKPa:55},
   cls:   {name:'청소싱크',         cwQ:11, conn:20, hot:false, dfu:3,  drain:'wst', dc:75,  minKPa:55},
   // 기준: DR-001 — 바닥배수구는 용도로 나눈다. 샤워는 언제나 2 DFU 이며 나누지 않는다.
   //   샤워 배수를 받는 공용 FD 는 샤워의 2 DFU 에 이미 들어 있으므로 따로 세지 않는다.
@@ -412,7 +415,7 @@ function calcNode(node){
     if(ct&&ct.key===k&&f.cwQ>0){
       const c=Math.min(ct.qty,n);
       a.contCw+=f.cwQ*c; a.contCnt+=c;
-      if(f.hot) a.contHw+=f.cwQ*c;
+      if(f.hot) a.contHw+=f.cwQ*(f.hotShare==null?1:f.hotShare)*c;
       a.mCw=Math.max(a.mCw,f.conn);
       a.mKPa=Math.max(a.mKPa,f.minKPa||0);
       if(f.hot) a.mHw=Math.max(a.mHw,f.conn);
@@ -431,7 +434,9 @@ function calcNode(node){
       a.mCw=Math.max(a.mCw,f.conn);
       a.mKPa=Math.max(a.mKPa,f.minKPa||0);   // 기준: WS-005 — 그 구간이 만족시켜야 할 최저 잔압
       if(f.hot){
-        if(isFV){a.fvHw+=f.cwQ*n; a.hwFvCnt+=n;} else {a.genHw+=f.cwQ*n; a.hwGenCnt+=n;}
+        // 기준: HW-001 — 혼합수전은 기구 전체유량의 hotShare(0.75) 만 급탕관이 진다
+        const hq=f.cwQ*(f.hotShare==null?1:f.hotShare);
+        if(isFV){a.fvHw+=hq*n; a.hwFvCnt+=n;} else {a.genHw+=hq*n; a.hwGenCnt+=n;}
         a.mHw=Math.max(a.mHw,f.conn);
       }
     }
@@ -671,6 +676,10 @@ function calcBoiler(bid){
           hwSimultF:r.hwSimultF, supply:sup, ret:hwReturnPipe(sup)};
 }
 // 환탕관 — 급탕 공급관에서 S.hwReturnStep 단계 축소, 최소 20A
+// 기준: HW-001 — 환탕관은 두 수준이다.
+//   계획값  급탕 공급관보다 한 단계 작게, 최소 20A        ← 이 함수가 내는 값
+//   확정값  배관 열손실 / (물의 비열 x 허용온도강하 5℃)  ← 배관 길이·보온이 정해진 뒤
+//   그러므로 이 결과는 개략값이며 화면과 엑셀에 그렇게 표시한다.
 function hwReturnPipe(supply){
   if(!supply) return 0;
   const n=(S.hwReturnStep==null?1:S.hwReturnStep);
@@ -843,16 +852,18 @@ function normalizeState(){
   //   폴백에만 들어가고 기본값에는 안 들어가, 새 프로젝트는 1.3 · 옛 저장본만 1.4 로 거꾸로였다.
   //   기본값·표시 폴백·계산 폴백을 모두 1.4 로 맞췄다. 잔압 차이는 10층에서 0.5 kPa 이다.
   // 기준: HW-001 — 급탕 열원 그룹. 구버전의 elecHW(불리언)를 hwSource 로 승격한다.
-  //   elecHW=true  → 'elec' (개별 순간온수기, 환탕 없음)
+  //   elecHW=true  → 'local' (개별식 온수기, 환탕 없음)
+  //   저장식·순간식의 구분은 장비 속성(heaterType)이며 계통 구분이 아니다 — HW-001
   //   elecHW=false → 첫 보일러 그룹 (중앙급탕)
   if(!Array.isArray(S.boilers)||!S.boilers.length) S.boilers=[{id:'B1',name:'보일러 B1'}];
   if(S.hwReturnStep==null) S.hwReturnStep=1;
   for(const z of S.zones){
-    if(!z.hwSource) z.hwSource = z.elecHW ? 'elec' : S.boilers[0].id;
+    if(z.hwSource==='elec') z.hwSource='local';   // 구 저장본 호환 (2026-09-26 개칭)
+    if(!z.hwSource) z.hwSource = z.elecHW ? 'local' : S.boilers[0].id;
     // 존재하지 않는 보일러를 가리키면 첫 보일러로 되돌린다
-    if(z.hwSource!=='elec'&&z.hwSource!=='none'&&!S.boilers.some(b=>b.id===z.hwSource))
+    if(z.hwSource!=='local'&&z.hwSource!=='none'&&!S.boilers.some(b=>b.id===z.hwSource))
       z.hwSource=S.boilers[0].id;
-    z.elecHW = (z.hwSource!=='none' && z.hwSource!=='elec') ? false : true;  // 기존 로직 호환
+    z.elecHW = (z.hwSource!=='none' && z.hwSource!=='local') ? false : true;  // 기존 로직 호환
   }
   let mx=0;
   const scanId=o=>{if(o&&o.id){const n=parseInt(o.id.slice(1));if(!isNaN(n)&&n>mx)mx=n;}};
@@ -1179,7 +1190,7 @@ function renderEditor(){
         <select style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 8px;font-size:12px"
           onchange="setZoneHwSource('${zone.id}',this.value)">
           <option value="none"${zone.hwSource==='none'?' selected':''}>급탕 없음</option>
-          <option value="elec"${zone.hwSource==='elec'?' selected':''}>개별 순간온수기 (환탕 없음)</option>
+          <option value="elec"${zone.hwSource==='local'?' selected':''}>개별식 온수기 (환탕 없음)</option>
           ${S.boilers.map(b=>`<option value="${b.id}"${zone.hwSource===b.id?' selected':''}>${esc(b.name)} (중앙급탕)</option>`).join('')}
           <option value="__new">＋ 새 열원 추가…</option>
         </select>
@@ -1192,7 +1203,7 @@ function renderEditor(){
             onclick="delBoiler('${b.id}')"
             title="${dis?'열원은 최소 1개가 있어야 합니다':esc(b.name)+' 삭제 (묶인 화장실 '+n+'개)'}">열원 삭제</button>`;
         })()}
-        <span style="color:var(--text3);font-size:11px">${zone.hwSource==='elec'?'급탕관 누적 제외 · 온수기 밸브세트 산출':zone.hwSource==='none'?'급탕 계산 제외':'그 열원으로 합산 · 환탕관 산정'}</span>
+        <span style="color:var(--text3);font-size:11px">${zone.hwSource==='local'?'급탕관 누적 제외 · 온수기 밸브세트 산출':zone.hwSource==='none'?'급탕 계산 제외':'그 열원으로 합산 · 환탕관 산정'}</span>
       </label>
     </div>
     <div class="zone-chips" id="zone-chips-${zone.id}">${chipsHTML(r)}</div>
@@ -1967,9 +1978,9 @@ function hwGroupCard(zone){
     border:1px solid ${bd||'var(--border)'};border-radius:6px;font-size:11.5px;line-height:1.7">${inner}</div>`;
   if(zone.hwSource==='none')
     return box(`<b>급탕 없음</b> <span style="color:var(--text3)">— 이 화장실은 급탕 계산에서 제외됩니다.</span>`);
-  if(zone.hwSource==='elec'){
+  if(zone.hwSource==='local'){
     const r=calcZone(zone);
-    return box(`<b>개별 순간온수기</b> <span style="color:var(--text3)">— 중앙급탕 누적에서 빠지고 환탕관이 없습니다.</span>
+    return box(`<b>개별식 온수기</b> <span style="color:var(--text3)">— 중앙급탕 누적에서 빠지고 환탕관이 없습니다.</span>
       ${r.hwQ>0?`<br>이 화장실 급탕 유량 <b>${r.hwQ.toFixed(1)} L/min</b> · 온수기 이후 급탕관 <b>${ps(r.hwPipe)}</b>
       <span style="color:var(--text3)">(온수기 용량은 이 앱의 범위가 아닙니다 — 이 유량으로 선정하세요)</span>`:''}`);
   }
@@ -1985,18 +1996,19 @@ function hwGroupCard(zone){
       <span style="font-size:11px">
         급탕 공급관 <b style="color:var(--warn)">${ps(g.supply)}</b>
         <span style="color:var(--text3)">/</span>
-        환탕관 <b style="color:var(--accent2)">${ps(g.ret)}</b></span>
+        환탕관 <b style="color:var(--accent2)">${ps(g.ret)}</b> <span style="color:var(--warn);font-size:10px">개략</span></span>
     </div>
     <div style="margin-top:4px">${names}</div>
     <div style="margin-top:3px;color:var(--text3);font-size:10.5px">
       합산 급탕 유량 ${g.hwQ.toFixed(1)} L/min (동시사용 ${((g.hwSimultF||1)*100).toFixed(1)}%) ·
-      환탕관은 급탕관 −${S.hwReturnStep??1}단계(관행, 최소 20A)
+      환탕관은 <span style="color:var(--warn)">개략값</span> — 급탕관 −${S.hwReturnStep??1}단계(관행, 최소 20A).
+      실시설계에서는 배관 열손실 ÷ (물의 비열 × 허용온도강하 5℃) 로 순환유량을 내어 확정합니다 (HW-001)
     </div>`, 'var(--accent)');
 }
 
 // ── 기준: HW-001 · 급탕 열원 그룹 패널 (④ MAIN관 탭) ──────────────────────────
 function hwSourcePanel(){
-  const elecZ=S.zones.filter(z=>z.hwSource==='elec');
+  const elecZ=S.zones.filter(z=>z.hwSource==='local');
   const noneZ=S.zones.filter(z=>z.hwSource==='none');
   let h=`<div class="section"><div class="fr" style="align-items:center;gap:12px;margin-bottom:8px">
     <span class="section-title" style="margin:0">급탕 열원 (중앙급탕 · 환탕)</span>
@@ -2017,7 +2029,7 @@ function hwSourcePanel(){
       <th style="padding:4px 6px;text-align:right;border-bottom:1.5px solid var(--border)">급탕 유량</th>
       <th style="padding:4px 6px;text-align:right;border-bottom:1.5px solid var(--border)">동시사용</th>
       <th style="padding:4px 6px;text-align:right;border-bottom:1.5px solid var(--border)">급탕 공급관</th>
-      <th style="padding:4px 6px;text-align:right;border-bottom:1.5px solid var(--border)">환탕관</th>
+      <th style="padding:4px 6px;text-align:right;border-bottom:1.5px solid var(--border)">환탕관(개략)</th>
       <th style="padding:4px 6px;border-bottom:1.5px solid var(--border)"></th>
     </tr>`;
   for(const b of S.boilers){
@@ -2040,7 +2052,7 @@ function hwSourcePanel(){
   h+=`</table>`;
   if(elecZ.length||noneZ.length){
     h+=`<div style="font-size:11px;color:var(--text2);margin-top:8px;line-height:1.7">
-      ${elecZ.length?`<b>개별 순간온수기</b> ${elecZ.length}개소 — ${esc(elecZ.map(z=>z.name).join(', '))} <span style="color:var(--text3)">(중앙급탕 누적 제외 · 환탕관 없음)</span><br>`:''}
+      ${elecZ.length?`<b>개별식 온수기</b> ${elecZ.length}개소 — ${esc(elecZ.map(z=>z.name).join(', '))} <span style="color:var(--text3)">(중앙급탕 누적 제외 · 환탕관 없음)</span><br>`:''}
       ${noneZ.length?`<b>급탕 없음</b> ${noneZ.length}개소 — ${esc(noneZ.map(z=>z.name).join(', '))}`:''}
     </div>`;
   }
@@ -2612,7 +2624,7 @@ function setZoneHwSource(id,v){
     return;
   }
   z.hwSource=v;
-  z.elecHW=(v==='elec'||v==='none');
+  z.elecHW=(v==='local'||v==='none');
   renderAll();
 }
 // ── 보일러(열원) 관리 ──────────────────────────────────────────────────────────
@@ -2629,7 +2641,7 @@ function addBoilerUI(){
 }
 function setBoilerName(id,v){const b=S.boilers.find(b=>b.id===id);if(b){b.name=v;persist();}}
 function delBoiler(id){
-  if(S.boilers.length<=1){alert('열원은 최소 1개가 있어야 합니다.\n\n중앙급탕을 쓰지 않는다면 각 화장실의 급탕 열원을\n「개별 순간온수기」 또는 「급탕 없음」으로 바꾸세요.');return;}
+  if(S.boilers.length<=1){alert('열원은 최소 1개가 있어야 합니다.\n\n중앙급탕을 쓰지 않는다면 각 화장실의 급탕 열원을\n「개별식 온수기」 또는 「급탕 없음」으로 바꾸세요.');return;}
   const b=S.boilers.find(x=>x.id===id); if(!b) return;
   const used=boilerZones(id);
   const to=S.boilers.find(x=>x.id!==id);      // 옮겨갈 열원
