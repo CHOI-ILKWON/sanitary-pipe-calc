@@ -252,7 +252,7 @@ select:focus{outline:none;border-color:var(--accent)}
 
 <script>
 // ── Constants ──────────────────────────────────────────────────────────────────
-const FX_KEYS = ['wc_v','wc_t','ur_v','ur_t','bas_p','bas_i','shw','bath','sink','cls','fd','wsh'];
+const FX_KEYS = ['wc_v','wc_t','ur_v','ur_t','bas_p','bas_i','shw','bath','sink','cls','fd','fd_e','wsh'];
 // 기준: WS-001 (cwQ·conn) — KDS 31 30 15 표 4.3-1 「위생기구의 최저 필요 급수압력과 유량」
 //   원표는 L/s 이므로 ×60 하여 L/min 으로 환산했다.
 //   2026-08-30 학회 「건축기계설비 설계기준」 표 3.6 「기구별 최대유량」과 대조했다.
@@ -289,7 +289,10 @@ const FX = {
   bath:  {name:'욕조',             cwQ:15, conn:20, hot:true,  dfu:2,  drain:'wst', dc:40,  minKPa:55},
   sink:  {name:'주방싱크',         cwQ:9,  conn:15, hot:true,  dfu:2,  drain:'wst', dc:50,  minKPa:55},
   cls:   {name:'청소싱크',         cwQ:11, conn:20, hot:false, dfu:3,  drain:'wst', dc:75,  minKPa:55},
-  fd:    {name:'FD(배수구)',        cwQ:0,  conn:0,  hot:false, dfu:1,  drain:'wst', dc:50,  minKPa:0},
+  // 기준: DR-001 — 바닥배수구는 용도로 나눈다. 샤워는 언제나 2 DFU 이며 나누지 않는다.
+  //   샤워 배수를 받는 공용 FD 는 샤워의 2 DFU 에 이미 들어 있으므로 따로 세지 않는다.
+  fd:    {name:'FD(상시배수)',      cwQ:0,  conn:0,  hot:false, dfu:1,  drain:'wst', dc:50,  minKPa:0},
+  fd_e:  {name:'FD(비상용)',        cwQ:0,  conn:0,  hot:false, dfu:0,  drain:'wst', dc:50,  minKPa:0},
   wsh:   {name:'세탁기',           cwQ:15, conn:15, hot:false, dfu:3,  drain:'wst', dc:50,  minKPa:55},   // 기준: WS-001 — 종전 8 은 출처가 없었다. KDS 표 4.3-1 「세탁기/세탁트레이 0.25 L/s = 15 L/min」 (2026-09-06 정정)
 };
 
@@ -339,6 +342,8 @@ function flowPipe(q){
   return d;
 }
 // 기준: DR-003 — KDS 31 30 25 표 4.1-5 (배수 수평지관과 수직관)
+//   호칭 — 앱의 75A 는 원표의 DN80 에 대응하는 국내 배수관 호칭이다. 값 충돌이 아니다.
+//   장기적으로는 내부를 DN 으로 두고 화면 호칭을 배관 재질별로 매핑하는 편이 낫다 (DR-003 3.x).
 //   [호칭경, 수평지관, 수직관 분기층3이하, 수직관 분기층3초과 합계, 1개 분기층당]
 //   수직관은 「합계」와 「1개 분기층당」 두 조건을 동시에 만족해야 한다.
 const DR_TBL=[
@@ -501,7 +506,8 @@ function zoneFxSummaryCard(z){
     {lbl:'욕조',   keys:['bath']},
     {lbl:'주방싱크',keys:['sink']},
     {lbl:'청소싱크',keys:['cls']},
-    {lbl:'FD',     keys:['fd']},
+    {lbl:'FD(상시)', keys:['fd']},
+    {lbl:'FD(비상)', keys:['fd_e']},
     {lbl:'세탁기', keys:['wsh']},
   ];
   return groups.map(g=>{const n=g.keys.reduce((s,k)=>s+(t[k]||0),0);return n?g.lbl+' '+n:'';}).filter(Boolean).join(' · ')||null;
@@ -874,6 +880,16 @@ function renderSidebar(){
   el.innerHTML=h;
 }
 
+// 기준: DR-001 — 샤워 배수를 받는 공용 FD 는 샤워의 2 DFU 에 이미 들어 있다.
+//   그 FD 를 「상시배수」 로 또 넣으면 이중 계상이 된다.
+function zoneFxWarn(z){
+  const t=zoneFxTotals(z), w=[];
+  if((t.shw||0)>0 && (t.fd||0)>0)
+    w.push(`샤워 ${t.shw}개와 상시배수 FD ${t.fd}개가 함께 있습니다. 샤워 배수를 받는 공용 FD 라면 빼주세요 — 샤워의 2 DFU 에 이미 들어 있습니다 (DR-001).`);
+  if(!w.length) return '';
+  return `<div style="margin-top:6px;padding:7px 10px;border-radius:6px;background:rgba(255,183,77,.10);border:1px solid rgba(255,183,77,.35);font-size:11px;color:var(--warn);line-height:1.6">
+    ${w.map(x=>'⚠ '+esc(x)).join('<br>')}</div>`;
+}
 function chipsHTML(r){
   return `<div class="chip"><span class="chip-lbl">급수</span><span class="chip-val" style="color:var(--accent)">${ps(r.cwPipe)}</span><span class="chip-lbl">${r.cwQ.toFixed(1)} L/min</span></div>
   <div class="chip"><span class="chip-lbl">급탕</span><span class="chip-val" style="color:var(--hot)">${ps(r.hwPipe)}</span><span class="chip-lbl">${r.hwQ.toFixed(1)} L/min</span></div>
@@ -1174,6 +1190,7 @@ function renderEditor(){
       </label>
     </div>
     <div class="zone-chips" id="zone-chips-${zone.id}">${chipsHTML(r)}</div>
+    ${zoneFxWarn(zone)}
     ${hwGroupCard(zone)}
   </div>`;
   h+=renderPipeCanvas(zone);
