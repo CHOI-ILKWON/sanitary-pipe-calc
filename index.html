@@ -599,26 +599,41 @@ function accResult(a,kind,opt){
     cwPipe:s.cwQ>0?Math.max(flowPipe(s.cwQ),a.mCw):0,
     hwPipe:s.hwQ>0?Math.max(flowPipe(s.hwQ),a.mHw):0,
     sewPipe:sp, wstPipe:wp,
-    sewVent:ventPipe(sD,sp,opt.ventLen), wstVent:ventPipe(wD,wp,opt.ventLen)});
+    sewVent: kind==='stack'?ventStack(sD,sp):ventBranch(sp,opt.ventLen),
+    wstVent: kind==='stack'?ventStack(wD,wp):ventBranch(wp,opt.ventLen),
+    ventKind: kind==='stack'?'stack':'branch',
+    ventApprox: kind==='stack'});   // 기준: DR-004 — 표 4.3-1 미확보. 수직관 통기는 개략값이다
 }
 // 기준: DR-004 — KDS 31 30 25, 4.3.4 통기관의 관 지름선정
-//   (2) 담당 배수관 관지름의 1/2 이상, 최소 DN32
-//   (2) 배관길이가 12 m 이상이면 전 배관길이에 대해 한 단계 큰 관지름
-//   (1) 신정통기관·통기수직관은 원칙적으로 표 4.3-1(길이 + 총 DFU)로 결정 — 원문 미입수라
-//       아래 DFU 개략표로 대신한다. 볼트 DR-004 참조.
+//   통기관은 종류에 따라 계산 방식이 다르다. 하나로 뭉뚱그리지 않는다.
+//
+//   (1) 신정통기관 · 통기수직관  → 표 4.3-1
+//         담당 배수수직관경 + 총 DFU + 통기관 전개길이 의 세 값으로 정한다.
+//         그 조건에서 허용길이가 실제 전개길이 이상인 최소 통기관경을 고른다.
+//         원표를 아직 확보하지 못했다 — 아래 ventStack() 은 개략값이며 검증이 필요하다.
+//
+//   (2) 각개 · 지관 · 루프 · 도피통기관 → 담당 배수관경의 1/2 이상, 최소 DN32
+//         전개길이 12 m 이상이면 전 길이에 대해 한 단계 확대. 12 m 규칙은 여기에만 쓴다.
+//
+//   (3) 집수정 통기관 → 표 4.3-2. 이 앱에서 다루지 않는다.
 const VENT_SIZES=[32,40,50,65,75,100,125,150];
-function ventPipe(dfu,drainD,len){
-  if(!dfu)return 0;
+function ventUp(v){ const i=VENT_SIZES.indexOf(v); return (i>=0&&i<VENT_SIZES.length-1)?VENT_SIZES[i+1]:v; }
+// (2) 각개·지관·루프·도피통기관
+function ventBranch(drainD,len){
+  if(!drainD) return 0;
+  let v=32;
+  for(const x of VENT_SIZES){ if(x>=drainD/2){ v=Math.max(32,x); break; } }
+  if((len||0)>=12) v=ventUp(v);   // 기준: DR-004 — 12 m 규칙은 이 계열에만 적용
+  return v;
+}
+// (1) 신정통기관·통기수직관 — 표 4.3-1 미확보. 개략값이며 확정값이 아니다
+function ventStack(dfu,drainD){
+  if(!dfu) return 0;
   let v;
   if(dfu<=2)v=32; else if(dfu<=8)v=40; else if(dfu<=24)v=50;
   else if(dfu<=42)v=65; else if(dfu<=60)v=75; else if(dfu<=500)v=100; else v=125;
-  const half=(drainD||0)/2;
-  for(const s of VENT_SIZES){ if(s>=half){ v=Math.max(v,s); break; } }
-  if((len||0)>=12){                       // 12 m 이상 → 한 단계 상향
-    const i=VENT_SIZES.indexOf(v);
-    if(i>=0&&i<VENT_SIZES.length-1) v=VENT_SIZES[i+1];
-  }
-  return v;
+  for(const x of VENT_SIZES){ if(x>=(drainD||0)/2){ v=Math.max(v,x); break; } }
+  return v;   // 12 m 확대를 적용하지 않는다 — 전개길이는 표 4.3-1 의 입력이다
 }
 
 // ── Floor calc — 층 담당 기구수로 계수 적용 ─────────────────────────────────
@@ -1535,15 +1550,18 @@ function renderResult(){
     <div class="chip"><span class="chip-lbl">급탕 MAIN관&nbsp;</span><span class="chip-val" style="color:var(--hot)">${ps(cm.hwPipe)}</span><span class="chip-lbl">&nbsp;${cm.hwQ.toFixed(1)} L/min</span></div>
     <div class="chip"><span class="chip-lbl">오수 MAIN관&nbsp;</span><span class="chip-val" style="color:var(--red)">${ps(dm.sewPipe)}</span><span class="chip-lbl">&nbsp;${dm.sewDFU.toFixed(1)} DFU</span></div>
     <div class="chip"><span class="chip-lbl">배수 MAIN관&nbsp;</span><span class="chip-val" style="color:var(--drain)">${ps(dm.wstPipe)}</span><span class="chip-lbl">&nbsp;${dm.wstDFU.toFixed(1)} DFU</span></div>
-    <div class="chip"><span class="chip-lbl">오수 통기&nbsp;</span><span class="chip-val" style="color:var(--red)">${ps(dm.sewVent||0)}</span></div>
-    <div class="chip"><span class="chip-lbl">배수 통기&nbsp;</span><span class="chip-val" style="color:var(--drain)">${ps(dm.wstVent||0)}</span></div>
+    <div class="chip"><span class="chip-lbl">오수 통기&nbsp;</span><span class="chip-val" style="color:var(--red)">${ps(dm.sewVent||0)}</span><span class="chip-lbl">&nbsp;개략</span></div>
+    <div class="chip"><span class="chip-lbl">배수 통기&nbsp;</span><span class="chip-val" style="color:var(--drain)">${ps(dm.wstVent||0)}</span><span class="chip-lbl">&nbsp;개략</span></div>
   </div>
   <div style="font-size:10.5px;color:var(--text2);margin-bottom:12px">
     급수 동시사용계수 ${((cm.cwSimultF||0.85)*100).toFixed(1)}%${S.cwSimultMode==='legacy'?' (고정)':
       ` — 세정밸브류(대·소변기) ${cm.fvCnt}개(${(fvSimult(cm.fvCnt)*100).toFixed(2)}%) + 일반기구 ${cm.genCnt}개(${(genSimult(cm.genCnt)*100).toFixed(2)}%)`} ·
     급탕 ${((cm.hwSimultF||0.85)*100).toFixed(1)}%${cm.hwCnt!=null?` (온수기구 ${cm.hwCnt}개)`:''} 적용 ·
     계수표 출처: 공조위생 기술데이터북(한미) — 화장실·층·입상관·MAIN 각 단계에서 그 구간 담당 기구수로 적용 ·
-    통기관경은 DFU 개략 + 담당 배수관경의 1/2 이상 기준 (최소 32A) ·
+    <span style="color:var(--warn)">통기관경은 개략값입니다 — KDS 표 4.3-1 검증 필요</span>.
+    신정통기관·통기수직관은 담당 배수수직관경·총 DFU·전개길이 세 값으로 정해야 하는데 원표를 확보하지 못했습니다 (DR-004).
+    각개·지관·루프·도피통기관은 담당 배수관경의 1/2 이상·최소 32A 로 산정하며 전개길이 12m 이상이면 한 단계 확대합니다.
+    집수정 통기관(표 4.3-2)은 이 앱에서 다루지 않습니다 ·
     배수관경은 KDS 31 30 25 — 횡주관 표 4.1-5(수평지관) / 입상관 표 4.1-5(수직관: 합계 + 1개 분기층당) /
     MAIN 표 4.1-4(구배 ${DR_SLOPES[S.drSlope==null?1:S.drSlope]}) · DFU 에 동시사용률을 곱하지 않음
   </div>
@@ -2191,14 +2209,14 @@ function exportCSV(){
   }
   if(S.dr.risers.length){
     rows.push([]);
-    rows.push(['[오배수 입상관]','오수 DFU','오수관','오수 통기','잡배수 DFU','잡배수관','잡배수 통기']);
+    rows.push(['[오배수 입상관]','오수 DFU','오수관','오수 통기(개략)','잡배수 DFU','잡배수관','잡배수 통기(개략)']);
     for(const ri of S.dr.risers){const r=calcRiser(ri,'dr');
       rows.push([ri.name,r.sewDFU.toFixed(1),ps(r.sewPipe),ps(r.sewVent||0),
         r.wstDFU.toFixed(1),ps(r.wstPipe),ps(r.wstVent||0)]);}
   }
   const cm=calcMainType('cw'),dm=calcMainType('dr');
   rows.push([]);
-  rows.push(['[MAIN관]','급수','급탕','오수','오수 통기','잡배수','잡배수 통기']);
+  rows.push(['[MAIN관]','급수','급탕','오수','오수 통기(개략)','잡배수','잡배수 통기(개략)']);
   rows.push(['관경',ps(cm.cwPipe),ps(cm.hwPipe),ps(dm.sewPipe),ps(dm.sewVent||0),ps(dm.wstPipe),ps(dm.wstVent||0)]);
   rows.push(['유량/부하',cm.cwQ.toFixed(1)+' L/min',cm.hwQ.toFixed(1)+' L/min',
     dm.sewDFU.toFixed(1)+' DFU','',dm.wstDFU.toFixed(1)+' DFU','']);
