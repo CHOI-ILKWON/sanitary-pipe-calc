@@ -399,9 +399,28 @@ function ps(p){ return p ? p+'A' : 'N/A' }
 function calcNode(node){
   const a=newAcc();
   const fx = node.fixtures||{};
+  // 기준: WS-002 3.7.2 — 연속사용으로 지정된 대수는 계수 그룹에서 빼고 따로 더한다
+  const ct = node.cont||null;
   for(const k of FX_KEYS){
-    const n=fx[k]||0; if(!n) continue;
+    let n=fx[k]||0; if(!n) continue;
     const f=FX[k], isFV=FV_KEYS.includes(k);
+    if(ct&&ct.key===k&&f.cwQ>0){
+      const c=Math.min(ct.qty,n);
+      a.contCw+=f.cwQ*c; a.contCnt+=c;
+      if(f.hot) a.contHw+=f.cwQ*c;
+      a.mCw=Math.max(a.mCw,f.conn);
+      a.mKPa=Math.max(a.mKPa,f.minKPa||0);
+      if(f.hot) a.mHw=Math.max(a.mHw,f.conn);
+      n-=c;                      // 남은 대수만 동시사용계수 대상
+      if(!n){                    // 배수는 연속사용과 무관하게 전량 계상
+        if(f.dfu>0&&f.drain){
+          const q=fx[k]||0;
+          if(f.drain==='sew'){a.sewRaw+=f.dfu*q; a.sewCnt+=q; a.mSew=Math.max(a.mSew,f.dc);}
+          else               {a.wstRaw+=f.dfu*q; a.wstCnt+=q; a.mWst=Math.max(a.mWst,f.dc);}
+        }
+        continue;
+      }
+    }
     if(f.cwQ>0){
       if(isFV){a.fvCw+=f.cwQ*n; a.fvCnt+=n;} else {a.genCw+=f.cwQ*n; a.genCnt+=n;}
       a.mCw=Math.max(a.mCw,f.conn);
@@ -412,8 +431,9 @@ function calcNode(node){
       }
     }
     if(f.dfu>0&&f.drain){
-      if(f.drain==='sew'){a.sewRaw+=f.dfu*n; a.sewCnt+=n; a.mSew=Math.max(a.mSew,f.dc);}
-      else               {a.wstRaw+=f.dfu*n; a.wstCnt+=n; a.mWst=Math.max(a.mWst,f.dc);}
+      const q=fx[k]||0;   // 배수는 연속사용 여부와 무관하게 전량
+      if(f.drain==='sew'){a.sewRaw+=f.dfu*q; a.sewCnt+=q; a.mSew=Math.max(a.mSew,f.dc);}
+      else               {a.wstRaw+=f.dfu*q; a.wstCnt+=q; a.mWst=Math.max(a.mWst,f.dc);}
     }
   }
   const kids=(node.children||[]).map(c=>calcNode(c));
@@ -428,10 +448,14 @@ function pipeToCalcNode(id, nodes){
   const n=nodes[id];
   const fixtures=Object.fromEntries(FX_KEYS.map(k=>[k,0]));
   if(n.type==='fixture'&&n.fxKey) fixtures[n.fxKey]=n.qty||1;
+  // 기준: WS-002 3.7 — 연속사용은 기구 종류가 아니라 운전 조건으로 판정한다.
+  //   연속사용 기구는 동시사용계수의 기구수에서 빼고 유량을 그대로 더한다.
+  const cont = (n.type==='fixture'&&n.fxKey&&n.cont)
+    ? {key:n.fxKey, qty:Math.min(+n.contQty||n.qty||1, n.qty||1)} : null;
   const children=[];
   if(n.mainNext) children.push(pipeToCalcNode(n.mainNext,nodes));
   if(n.branchNext) children.push(pipeToCalcNode(n.branchNext,nodes));
-  return {id:n.id, fixtures, children};
+  return {id:n.id, fixtures, cont, children};
 }
 
 // 기준: WS-005 — 압력검토에서 확정된 상향 단계를 급수·급탕 관경에 반영한다.
@@ -522,19 +546,24 @@ function genSimult(n){ return simLookup(n,SIM_GEN); } // 일반기구
 // 세정밸브류(대·소변기)는 별도 곡선 — 그룹별 유량에 각자의 계수를 적용 후 합산
 // 소변기 세정밸브도 플러시밸브라 순간유량 특성이 같으므로 대변기와 동일 곡선 적용
 const FV_KEYS=['wc_v','ur_v'];
+// 기준: WS-002 3.7.2 — Q = (일반기구 동시사용유량) + Σ(연속사용 유량)
+//   연속사용분은 계수를 곱하지 않는다. 그 시간 동안 확률이 1 이기 때문이다 (3.5.4 b).
 function suppSimult(a){
-  const rawCw=a.fvCw+a.genCw, rawHw=a.fvHw+a.genHw;
+  const cc=a.contCw||0, ch=a.contHw||0;
+  const rawCw=a.fvCw+a.genCw+cc, rawHw=a.fvHw+a.genHw+ch;
   if(S.cwSimultMode==='legacy') return {cwQ:rawCw,hwQ:rawHw,cwF:1,hwF:1};
-  const cwQ=a.fvCw*fvSimult(a.fvCnt)+a.genCw*genSimult(a.genCnt);
-  const hwQ=a.fvHw*fvSimult(a.hwFvCnt)+a.genHw*genSimult(a.hwGenCnt);
+  const cwQ=a.fvCw*fvSimult(a.fvCnt)+a.genCw*genSimult(a.genCnt)+cc;
+  const hwQ=a.fvHw*fvSimult(a.hwFvCnt)+a.genHw*genSimult(a.hwGenCnt)+ch;
   return {cwQ,hwQ,cwF:rawCw?cwQ/rawCw:1,hwF:rawHw?hwQ/rawHw:1};
 }
 // ── 계층 누적기: 각 단계는 항상 '원시 합계'를 모아 자기 기구수로 계수를 적용한다
 //    (자식의 이미 계수가 곱해진 값을 다시 곱하는 이중 적용을 방지)
 function newAcc(){return {fvCw:0,genCw:0,fvHw:0,genHw:0,fvCnt:0,genCnt:0,hwFvCnt:0,hwGenCnt:0,
+  contCw:0,contHw:0,contCnt:0,
   sewRaw:0,wstRaw:0,sewCnt:0,wstCnt:0,mCw:0,mHw:0,mSew:0,mWst:0,mKPa:0};}
 function accAdd(a,r,skipHot){
   a.fvCw+=r.fvCw; a.genCw+=r.genCw; a.fvCnt+=r.fvCnt; a.genCnt+=r.genCnt;
+  a.contCw+=r.contCw||0; a.contCnt+=r.contCnt||0; if(!skipHot)a.contHw+=r.contHw||0;
   if(!skipHot){a.fvHw+=r.fvHw; a.genHw+=r.genHw; a.hwFvCnt+=r.hwFvCnt; a.hwGenCnt+=r.hwGenCnt;}
   a.sewRaw+=r.sewRaw; a.wstRaw+=r.wstRaw; a.sewCnt+=r.sewCnt; a.wstCnt+=r.wstCnt;
   a.mCw=Math.max(a.mCw,r.cwPipe); if(!skipHot)a.mHw=Math.max(a.mHw,r.hwPipe);
@@ -561,7 +590,8 @@ function accResult(a,kind,opt){
   const wp=wD>0?Math.max(wRaw,a.mWst,50):0;
   return Object.assign({},a,{
     cwQ:s.cwQ, hwQ:s.hwQ, cwSimultF:s.cwF, hwSimultF:s.hwF,
-    cwCnt:a.fvCnt+a.genCnt, hwCnt:a.hwFvCnt+a.hwGenCnt,
+    cwCnt:a.fvCnt+a.genCnt+(a.contCnt||0), hwCnt:a.hwFvCnt+a.hwGenCnt,
+    contCw:a.contCw||0, contHw:a.contHw||0, contCnt:a.contCnt||0,
     sewDFU:sD, wstDFU:wD,
     cwPipe:s.cwQ>0?Math.max(flowPipe(s.cwQ),a.mCw):0,
     hwPipe:s.hwQ>0?Math.max(flowPipe(s.hwQ),a.mHw):0,
@@ -891,6 +921,14 @@ function renderPipeNode(id, n, p, zoneId, r){
       <input class="pipe-qty-inp" type="number" min="1" value="${n.qty||1}"
         onchange="setPipeQty('${zoneId}','${id}',+this.value)">
       <span style="font-size:10px;color:var(--text2)">개</span>
+    </div>
+    <div class="pipe-qty-row" style="margin-top:3px">
+      <label style="display:flex;align-items:center;gap:3px;font-size:9.5px;color:${n.cont?'var(--warn)':'var(--text2)'};cursor:pointer" title="운전 중 계속 열려 있는 기구. 동시사용계수에서 빼고 유량을 그대로 더한다 (WS-002 3.7)">
+        <input type="checkbox" ${n.cont?'checked':''} onchange="setPipeCont('${zoneId}','${id}',this.checked)"> 연속사용
+      </label>
+      ${n.cont?`<input class="pipe-qty-inp" style="width:34px" type="number" min="1" max="${n.qty||1}" value="${n.contQty||n.qty||1}"
+        title="동시에 연속 사용하는 대수" onchange="setPipeContQty('${zoneId}','${id}',+this.value)">
+      <span style="font-size:9.5px;color:var(--warn)">대 동시</span>`:''}
     </div>`;
   } else if(n.type==='end'){
     cls='pipe-node-end'; label='종점';
@@ -1205,6 +1243,19 @@ function pickFx(zoneId, fromId, direction, fxKey){
   renderAll();
 }
 
+// 기준: WS-002 3.7.3 — 동시운전 대수는 회사 공통값으로 두지 않고 프로젝트 입력값으로 한다
+function setPipeCont(zoneId,nodeId,v){
+  const z=findZone(zoneId); if(!z) return;
+  const n=z.pipe.nodes[nodeId]; if(!n) return;
+  n.cont=!!v; if(v&&!n.contQty) n.contQty=n.qty||1;
+  renderAll();
+}
+function setPipeContQty(zoneId,nodeId,q){
+  const z=findZone(zoneId); if(!z) return;
+  const n=z.pipe.nodes[nodeId]; if(!n) return;
+  n.contQty=Math.max(1,Math.min(+q||1,n.qty||1));
+  renderAll();
+}
 function setPipeQty(zoneId, nodeId, qty){
   const z=findZone(zoneId); if(!z) return;
   const n=z.pipe.nodes[nodeId]; if(!n) return;
