@@ -775,7 +775,11 @@ function newZone(name,floor=''){
 const S={
   projectName:'새 프로젝트',
   zones:[],
-  mainLocation:'bottom', // 기준: AC-031 — 급수 방식. 부스터펌프식(bottom)이 표준.
+  // 기준: AC-031 31.3.1.3 — 급수 방식 셋을 각각의 선택지로 둔다.
+  //   수도직결식을 부스터로 대신 고르지 않는다. 계산은 맞아도 계통도·장비표·수량에
+  //   있지도 않은 펌프가 올라간다 (31.4.3 d).
+  supplyType:'booster',  // 'direct' 수도직결 | 'booster' 저수조+부스터 | 'elevated' 저수조+양수+고가수조
+  mainLocation:'bottom', // supplyType 에서 파생. 기준: AC-031 — 부스터펌프식(bottom)이 표준.
                          // 이 선택이 위치수두의 부호를 바꾸므로 관경까지 달라진다 (AC-031 31.3.1.3)
                          // 'bottom'|'top'
   cwSimultMode:'curve',  // 'curve'(동시사용계수표)|'legacy'(메인 0.85 고정)
@@ -823,7 +827,9 @@ function normalizeState(){
     if(!S[t].main)    S[t].main    = {riserIds:[],floorIds:[],zoneIds:[]};
     delete S[t].groups; delete S[t].sgs;
   }
-  if(!S.mainLocation) S.mainLocation='bottom';
+  if(!S.supplyType) S.supplyType = (S.mainLocation==='top')?'elevated':'booster';
+  S.mainLocation = (S.supplyType==='elevated')?'top':'bottom';   // 항상 방식에서 파생
+  if(!S.maxPressureKPa) S.maxPressureKPa=0;   // 최저층 최대압력(정지양정 기준). 0 이면 미입력
   if(!S.cwSimultMode) S.cwSimultMode='curve';
   if(!S.pressure) S.pressure={supplyKPa:250,floorH:3.0,material:'stainless',mainLen:10,branchLen:8,zoneLen:3,minResidualKPa:55,fittingFactor:1.4};
   if(S.pressure.zoneLen==null) S.pressure.zoneLen=3;
@@ -1451,9 +1457,10 @@ function renderMainPipeTab(){
     <span class="section-title" style="margin:0">MAIN관 설정</span>
     <label style="font-size:12px;color:var(--text2)">급수방식:
       <select style="margin-left:6px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 8px;font-size:12px"
-        onchange="S.mainLocation=this.value;renderAll()">
-        <option value="bottom"${S.mainLocation==='bottom'?' selected':''}>지하 기계실 → 상향급수 (부스터펌프·가압식)</option>
-        <option value="top"${S.mainLocation==='top'?' selected':''}>옥상 수조 → 하향급수 (고가수조식)</option>
+        onchange="setSupplyType(this.value)">
+        <option value="direct"${S.supplyType==='direct'?' selected':''}>수도직결식 — 저수조·펌프 없음</option>
+        <option value="booster"${S.supplyType!=='direct'&&S.supplyType!=='elevated'?' selected':''}>저수조 + 부스터펌프식 (상향급수)</option>
+        <option value="elevated"${S.supplyType==='elevated'?' selected':''}>저수조 + 양수펌프 + 고가수조식 (하향급수)</option>
       </select>
     </label>
     <label style="font-size:12px;color:var(--text2)">급수 동시사용률:
@@ -1556,7 +1563,7 @@ function renderMainPipeTab(){
 function renderResult(){
   const el=document.getElementById('resultPanel');
   const cm=calcMainType('cw'), dm=calcMainType('dr');
-  const locLabel=S.mainLocation==='top'?'고가수조식 (하향급수)':'부스터펌프식 (상향급수)';
+  const locLabel=(SUPPLY_EQUIP[S.supplyType]||SUPPLY_EQUIP.booster).label;
   let h=`<div style="padding:16px;overflow-y:auto;flex:1">
   <div class="fr mb" style="align-items:center;gap:16px">
     <span class="result-card-title" style="font-size:15px">메인관 결과</span>
@@ -2577,6 +2584,17 @@ function delZone(id){
   renderAll();
 }
 function selZone(id){activeZone=id;renderSidebar();renderEditor();}
+// 기준: AC-031 31.4.3 e) — 방식이 저수조·펌프의 유무를 결정한다
+const SUPPLY_EQUIP={
+  direct:  {label:'수도직결식',            tank:false, pump:'없음',      loc:'bottom'},
+  booster: {label:'저수조 + 부스터펌프식',  tank:true,  pump:'부스터펌프', loc:'bottom'},
+  elevated:{label:'저수조 + 고가수조식',    tank:true,  pump:'양수펌프',   loc:'top'}
+};
+function setSupplyType(v){
+  S.supplyType=v;
+  S.mainLocation=(SUPPLY_EQUIP[v]||SUPPLY_EQUIP.booster).loc;
+  renderAll();
+}
 function setZoneName(id,v){const z=findZone(id);if(z){z.name=v;renderSidebar();}}
 function setZoneFloor(id,v){const z=findZone(id);if(z){z.floor=v;renderSidebar();}}
 function setZoneElecHW(id,v){const z=findZone(id);if(z){z.elecHW=v;renderEditor();}}
@@ -2685,7 +2703,7 @@ function resetAll(){
   if(!confirm('현재 작업을 초기화할까요? 저장하지 않은 내용은 사라집니다.')) return;
   S.projectName='새 프로젝트';
   S.zones=[];
-  S.mainLocation='bottom';
+  S.supplyType='booster'; S.mainLocation='bottom'; S.maxPressureKPa=0;
   S.cwSimultMode='curve';
   S.cw={floors:[],risers:[],main:{riserIds:[],floorIds:[],zoneIds:[]}};
   S.dr={floors:[],risers:[],main:{riserIds:[],floorIds:[],zoneIds:[]}};
@@ -2985,7 +3003,27 @@ function renderPressurePathResult(paths,type,isCW){
   if(!paths.length)return`<div class="empty">계산 가능한 경로 없음 (입상관·층·화장실 설정 필요)</div>`;
   const critical=paths[0];
   const critColor=critical.ok?'var(--accent2)':'var(--red)';
-  let h=`<div style="background:var(--surface2);border:1.5px solid ${critColor};border-radius:8px;padding:12px;margin-bottom:16px">
+  // 기준: AC-031 31.3.2.4 a) — 존 분할은 두 조건을 함께 본다
+  const zs=zoneSplitCheck();
+  const cond1=critical.ok, cond2=!zs.over;
+  let h=`<div style="background:var(--surface2);border:1.5px solid ${(cond1&&cond2)?'var(--accent2)':'var(--red)'};border-radius:8px;padding:12px;margin-bottom:12px">
+    <div style="font-size:10px;color:var(--text2);margin-bottom:6px">존 분할 판정 — 두 조건을 함께 본다 (AC-031 31.3.2.4)</div>
+    <table style="width:100%;font-size:11px;border-collapse:collapse">
+      <tr><td style="padding:3px 5px;width:20px">${cond1?'✓':'⚠'}</td>
+        <td style="padding:3px 5px">최상층 잔압 ≥ 기구 최소 필요압력</td>
+        <td style="padding:3px 5px;text-align:right;font-weight:700;color:${cond1?'var(--accent2)':'var(--red)'}">${critical.residual.toFixed(1)} / ${(critical.needKPa||P.minResidualKPa)} kPa</td></tr>
+      <tr><td style="padding:3px 5px">${cond2?'✓':'⚠'}</td>
+        <td style="padding:3px 5px">최저층 최대압력 ≤ ${zs.limit} kPa</td>
+        <td style="padding:3px 5px;text-align:right;font-weight:700;color:${cond2?'var(--accent2)':'var(--red)'}">${zs.lo.toFixed(0)} kPa</td></tr>
+    </table>
+    <div style="font-size:10px;color:${(cond1&&cond2)?'var(--text3)':'var(--red)'};margin-top:6px;line-height:1.6">
+      ${(cond1&&cond2)
+        ? '한 계통으로 갈 수 있습니다.'
+        : '하나라도 어긋나면 감압(PRV) 또는 급수 존 분할을 검토합니다. 둘은 반대로 움직이므로 양정을 키워 위를 맞추면 아래가 깨집니다.'}
+      ${zs.assumed?'<br>※ 최대 공급압력이 미입력이라 공급압력으로 갈음했습니다. 펌프 정지양정(Shut-off)을 넣으면 정확해집니다 — 새벽 저유량 때가 기구에 가장 가혹합니다.':''}
+    </div>
+  </div>
+  <div style="background:var(--surface2);border:1.5px solid ${critColor};border-radius:8px;padding:12px;margin-bottom:16px">
     <div style="font-size:10px;color:var(--text2);margin-bottom:4px">임계경로 (최소 잔압)</div>
     <div style="font-size:12px;font-weight:700;color:${critColor};margin-bottom:10px">${critical.ok?'✓':'⚠'} ${critical.label}</div>
     <table style="width:100%;font-size:10.5px;border-collapse:collapse">
@@ -3063,6 +3101,27 @@ function renderPressurePathResult(paths,type,isCW){
   return h;
 }
 
+// 기준: AC-031 31.3.2.4 — 존 분할은 층수가 아니라 두 조건으로 판정한다.
+//   1) 최상층 잔압(설계유량) >= 기구 최소 필요압력
+//   2) 최저층 최대압력 <= 550 kPa   ← 정격 운전점이 아니라 정지양정으로 본다
+const MAX_FIXTURE_KPA=550;   // 기준: KDS 31 30 15 (2026-02-23) 4.7
+function lowFloorMaxKPa(){
+  const P=S.pressure;
+  const base=S.maxPressureKPa||P.supplyKPa||0;
+  const h=Math.max(0,((+S.pressure.floors||0)||0));
+  // 부스터·직결은 최저층이 기준면이라 위치수두가 더해지지 않는다.
+  // 고가수조식은 수조에서 최저층까지 내려오며 위치수두가 더해진다.
+  if(S.supplyType==='elevated'){
+    const nf=Math.max(1,(S.cw.floors.length||1));
+    return base + elevLossKPa(nf*(P.floorH||3));
+  }
+  return base;
+}
+function zoneSplitCheck(){
+  const lo=lowFloorMaxKPa();
+  return {lo, over:lo>MAX_FIXTURE_KPA, limit:MAX_FIXTURE_KPA,
+    assumed:!S.maxPressureKPa};
+}
 function renderPressureTab(){
   const el=document.getElementById('pressurePane');
   if(!el)return;
@@ -3079,6 +3138,11 @@ function renderPressureTab(){
     <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:12px;letter-spacing:.5px">압력 설정</div>
     <div style="margin-bottom:10px"><div style="font-size:10.5px;color:var(--text2);margin-bottom:3px">공급압력 (수도직결 or 펌프압력, kPa)</div>
       ${inp('supplyKPa',P.supplyKPa,50,1000,10,'수도직결: 200~300 kPa / 펌프: 양정(m)×9.81')}</div>
+    <div style="margin-bottom:10px"><div style="font-size:10.5px;color:var(--text2);margin-bottom:3px">최대 공급압력 (kPa)</div>
+      <input type="number" value="${S.maxPressureKPa||''}" min="0" max="2000" step="10" placeholder="미입력"
+        onchange="S.maxPressureKPa=+this.value||0;renderAll()"
+        style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:6px;font-size:12px;box-sizing:border-box">
+      <div style="font-size:10px;color:var(--text3);margin-top:2px">${S.supplyType==='elevated'?'수조 저수위 기준. 비우면 공급압력으로 봅니다':'펌프 정지양정(Shut-off) 기준. 정격 운전점이 아닙니다 — AC-031 31.3.2.4 b)'}</div></div>
     <div style="margin-bottom:10px"><div style="font-size:10.5px;color:var(--text2);margin-bottom:3px">층고 (m)</div>
       ${inp('floorH',P.floorH,2,10,0.1)}</div>
     <div style="margin-bottom:10px"><div style="font-size:10.5px;color:var(--text2);margin-bottom:3px">배관 재질</div>
