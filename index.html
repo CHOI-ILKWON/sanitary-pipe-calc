@@ -3120,7 +3120,6 @@ const MAX_FIXTURE_KPA=550;   // 기준: KDS 31 30 15 (2026-02-23) 4.7
 function lowFloorMaxKPa(){
   const P=S.pressure;
   const base=S.maxPressureKPa||P.supplyKPa||0;
-  const h=Math.max(0,((+S.pressure.floors||0)||0));
   // 부스터·직결은 최저층이 기준면이라 위치수두가 더해지지 않는다.
   // 고가수조식은 수조에서 최저층까지 내려오며 위치수두가 더해진다.
   if(S.supplyType==='elevated'){

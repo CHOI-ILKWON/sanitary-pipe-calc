@@ -42,9 +42,12 @@ function flowPipe(q){ ... }
 | `WS-002` | 급수·급탕 동시사용계수 | `SIM_N`/`SIM_FV`/`SIM_GEN` |
 | `WS-003` | 급수관경 유량 구간표 | `flowPipe()` |
 | `DR-001` | 기구배수부하단위(DFU)·기구배수관경 | `FX` 상수 |
-| `DR-002` | 배수 동시사용률 | `sewSimult()`/`wstSimult()` |
-| `DR-003` | 배수관경 DFU 구간표 | `sewPipe()`/`wstPipe()` |
-| `DR-004` | 통기관경 | `ventPipe()` |
+| `DR-002` | 배수 동시사용률 | DFU 합계를 그대로 쓴다 (별도 계수 없음) |
+| `DR-003` | 배수관경 DFU 구간표 | `DR_TBL`/`branchPipe()`/`stackPipe()` |
+| `DR-004` | 통기관경 | `ventBranch()`/`ventStack()` |
+| `DR-005` | 건물배수 수평주관 구배 | `DR_MAIN_TBL`/`mainDrainPipe()` |
+| `HW-001` | 급탕 열원그룹·환탕관·급탕 분담률 | `calcBoiler()`/`hwReturnPipe()`/`FX[k].hotShare` |
+| `AC-031` | 급수방식 3종·존 분할 압력 판정 | `SUPPLY_EQUIP`/`zoneSplitCheck()` |
 
 ## 계산 로직의 원칙
 
