@@ -279,8 +279,8 @@ const FX_KEYS = ['wc_v','wc_t','ur_v','ur_t','bas_p','bas_i','shw','bath','sink'
 //
 // 소변기(세정탱크) 6 은 KDS 표에도 학회 표 3.6 에도 없다 — 출처 없음 (WS-001 11 a).
 const FX = {
-  wc_v:  {name:'대변기(세정밸브)', cwQ:96, conn:25, hot:false, dfu:4,  drain:'sew', dc:100, minKPa:100},
-  wc_t:  {name:'대변기(세정탱크)', cwQ:11, conn:15, hot:false, dfu:4,  drain:'sew', dc:100, minKPa:55},
+  wc_v:  {name:'대변기(세정밸브)', cwQ:96, conn:25, hot:false, dfu:4,  drain:'sew', dc:75,  minKPa:100},
+  wc_t:  {name:'대변기(세정탱크)', cwQ:11, conn:15, hot:false, dfu:4,  drain:'sew', dc:75,  minKPa:55},
   ur_v:  {name:'소변기(세정밸브)', cwQ:45, conn:20, hot:false, dfu:4,  drain:'sew', dc:75,  minKPa:100},
   ur_t:  {name:'소변기(세정탱크)', cwQ:6,  conn:15, hot:false, dfu:4,  drain:'sew', dc:75,  minKPa:55},
   // 기준: HW-001 — 혼합수전의 급탕 분담률. 기구 전체유량의 75% 만 급탕관이 진다.
@@ -421,6 +421,14 @@ function mainDrainPipe(d,slopeIdx){
   for(const r of DR_MAIN_TBL) if(r[i]>0 && d<=r[i]) return r[0];
   return 300;
 }
+// 기준: DR-003 — 오수관 최소관경. 대변기 배수는 75A(DN80) 로 받되 담당 대변기 수에 한도가 있다.
+//   KDS 31 30 25 표 4.1-5 주 — 75A 수평지관은 대변기 2개 이내, 수직관은 6개 이내.
+//   건물배수 수평주관(표 4.1-4)도 75A 는 대변기 2개 이내로 본다.
+//   2026-10-12 종전 「오수관 최소 100A」 를 이 규칙으로 바꿨다 — 대변기 1개 지관이 100A 로
+//   잡혀 실무(75A·80A)보다 컸다. 원 엑셀(배수기구단위법) 도 대변기 트랩 75(100) 으로 75A 를 쓴다.
+const WC_KEYS=['wc_v','wc_t'];
+const WC75_MAX={branch:2, stack:6, main:2};
+function sewMin(wc,kind){ return (wc||0)<=(WC75_MAX[kind||'branch']||2)?75:100; }
 function ps(p){ return p ? p+'A' : 'N/A' }
 
 // ── Calc (tree-based, used internally) ────────────────────────────────────────
@@ -443,7 +451,7 @@ function calcNode(node){
       if(!n){                    // 배수는 연속사용과 무관하게 전량 계상
         if(f.dfu>0&&f.drain){
           const q=fx[k]||0;   // 배수는 전량 계상 (WS-002 3.7 b)
-          if(f.drain==='sew'){a.sewRaw+=f.dfu*q; a.sewCnt+=q; a.mSew=Math.max(a.mSew,f.dc);}
+          if(f.drain==='sew'){a.sewRaw+=f.dfu*q; a.sewCnt+=q; if(WC_KEYS.includes(k))a.wcCnt+=q; a.mSew=Math.max(a.mSew,f.dc);}
           else               {a.wstRaw+=f.dfu*q; a.wstCnt+=q; a.mWst=Math.max(a.mWst,f.dc);}
         }
         continue;
@@ -465,7 +473,7 @@ function calcNode(node){
       // 기준: WS-002 3.7 b) — 급수의 연속사용 지정은 배수 DFU 를 자동으로 바꾸지 않는다.
       //   다만 연속배출·공정배수에 해당하면 배수관 용량을 따로 검토한다 (앱 밖).
       const q=fx[k]||0;
-      if(f.drain==='sew'){a.sewRaw+=f.dfu*q; a.sewCnt+=q; a.mSew=Math.max(a.mSew,f.dc);}
+      if(f.drain==='sew'){a.sewRaw+=f.dfu*q; a.sewCnt+=q; if(WC_KEYS.includes(k))a.wcCnt+=q; a.mSew=Math.max(a.mSew,f.dc);}
       else               {a.wstRaw+=f.dfu*q; a.wstCnt+=q; a.mWst=Math.max(a.mWst,f.dc);}
     }
   }
@@ -601,14 +609,14 @@ function suppSimult(a){
 function newAcc(){return {fvCw:0,genCw:0,fvHw:0,genHw:0,fvCnt:0,genCnt:0,hwFvCnt:0,hwGenCnt:0,
   contCw:0,contHw:0,contCnt:0,
   fvEq:0,genEq:0,fvHwEq:0,genHwEq:0,contEq:0,contHwEq:0,
-  sewRaw:0,wstRaw:0,sewCnt:0,wstCnt:0,mCw:0,mHw:0,mSew:0,mWst:0,mKPa:0};}
+  sewRaw:0,wstRaw:0,sewCnt:0,wstCnt:0,wcCnt:0,mCw:0,mHw:0,mSew:0,mWst:0,mKPa:0};}
 function accAdd(a,r,skipHot){
   a.fvCw+=r.fvCw; a.genCw+=r.genCw; a.fvCnt+=r.fvCnt; a.genCnt+=r.genCnt;
   a.contCw+=r.contCw||0; a.contCnt+=r.contCnt||0; if(!skipHot)a.contHw+=r.contHw||0;
   a.fvEq+=r.fvEq||0; a.genEq+=r.genEq||0; a.contEq+=r.contEq||0;
   if(!skipHot){a.fvHwEq+=r.fvHwEq||0; a.genHwEq+=r.genHwEq||0; a.contHwEq+=r.contHwEq||0;}
   if(!skipHot){a.fvHw+=r.fvHw; a.genHw+=r.genHw; a.hwFvCnt+=r.hwFvCnt; a.hwGenCnt+=r.hwGenCnt;}
-  a.sewRaw+=r.sewRaw; a.wstRaw+=r.wstRaw; a.sewCnt+=r.sewCnt; a.wstCnt+=r.wstCnt;
+  a.sewRaw+=r.sewRaw; a.wstRaw+=r.wstRaw; a.sewCnt+=r.sewCnt; a.wstCnt+=r.wstCnt; a.wcCnt+=r.wcCnt||0;
   a.mCw=Math.max(a.mCw,r.cwPipe); if(!skipHot)a.mHw=Math.max(a.mHw,r.hwPipe);
   a.mKPa=Math.max(a.mKPa,r.mKPa||0);
   a.mSew=Math.max(a.mSew,r.sewPipe); a.mWst=Math.max(a.mWst,r.wstPipe);
@@ -629,7 +637,7 @@ function accResult(a,kind,opt){
   }else{                                   // 기준: DR-003 표 4.1-5 수평지관 열
     sRaw=branchPipe(sD); wRaw=branchPipe(wD);
   }
-  const sp=sD>0?Math.max(sRaw,a.mSew,100):0;
+  const sp=sD>0?Math.max(sRaw,a.mSew,sewMin(a.wcCnt,kind)):0;
   const wp=wD>0?Math.max(wRaw,a.mWst,50):0;
   return Object.assign({},a,{
     cwQ:s.cwQ, hwQ:s.hwQ, cwSimultF:s.cwF, hwSimultF:s.hwF,
@@ -1989,7 +1997,7 @@ function renderHelp(){
   h+=step(2,'전기온수기 여부','화장실별 전기온수기를 쓰면 체크하세요. 그 존의 온수량이 중앙급탕 관경에서 빠지고, 밸브 산출에 온수기 밸브 세트(차단+체크)가 잡힙니다.');
   h+=step(3,'급수/급탕 연결','<b>② 탭</b>에서 층을 만들어 화장실을 배정하고, 입상관을 만들어 층을 배정합니다. 이 계층이 곧 계통도입니다.');
   h+=step(4,'오배수 연결','<b>③ 탭</b>에서 같은 방식으로 — 급수와 오배수의 계통이 다르면 다르게 구성할 수 있습니다.');
-  h+=step(5,'MAIN관 설정','<b>④ 탭</b>에서 메인관에 포함할 항목을 체크하고 <b>급수방식</b>(지하 기계실→상향급수 / 옥상 수조→하향급수)을 선택합니다. 이 선택이 위치수두의 부호를 바꿔 관경에 영향을 줍니다. 급수 동시사용계수·허용유속·배수 MAIN 구배도 여기서 정합니다.');
+  h+=step(5,'MAIN관 설정','<b>④ 탭</b>에서 메인관에 포함할 항목을 체크하고 <b>급수방식</b>(지하 기계실→상향급수 / 옥상 수조→하향급수)을 선택합니다. 이 선택이 위치수두의 부호를 바꿔 관경에 영향을 줍니다. 급수 동시사용계수·<b>급수 관경 선정 방식(관균등표/유량 구간표)</b>·허용유속·배수 MAIN 구배도 여기서 정합니다.');
   h+=step(6,'압력검토 → 자동 상향','<b>⑤ 탭</b>에서 공급압력·층고·배관 길이·이음쇠 등가장 계수를 입력하면 임계경로의 말단 잔압을 검토합니다. 말단 필요압력은 <b>기구별로 자동 적용</b>됩니다(세정밸브 100kPa 등). <b>「잔압 부족 구간 자동 상향」</b> 버튼을 누르면 부족한 구간의 관경을 올리고 다시 계산하기를 반복해 전 경로를 만족시킵니다. <b>입상관에 층을 배정할 때는 위층부터 나열하세요</b> — 순서가 곧 높이입니다.');
   h+=step(7,'결과 확인','<b>⑥ 탭</b>에서 메인관 관경·통기관·건물 계통도를 확인합니다.');
   h+=step(8,'밸브·부속 산출 → 엑셀','<b>⑦ 탭</b>에서 화장실 말단 밸브(볼·앵글·WHA·온수기 세트·진공브레이커)와 부속(티·엘보·레듀서, 개략)이 자동 산출됩니다. <b>📊 엑셀</b> 버튼으로 관경+밸브+부속 전체를 CSV로 내려받습니다.');
@@ -2134,8 +2142,10 @@ function basisGuide(){
      <b>급수·급탕 — KDS 31 30 15 : 2021 급수설비</b><br>
      · 표 4.3-1 위생기구의 최저 필요 급수압력과 유량 · 표 4.5-1 기구급수관의 최소 관지름<br>
      · <b>단, 관지름 산정법 자체는 KDS 4.1 이 「SAREK 표준 401-2013」으로 위임</b>합니다.
-       이 앱의 유량 구간표는 그 계열의 표이며, 결과가 국내 통용 기준
-       (마찰손실 50 mmAq/m 이하, 유속 1.5 m/s 이하)을 만족함을 역산으로 확인했습니다.<br><br>
+       이 앱은 기본으로 <b>관균등표</b>(공조위생 기술데이터북, 동관 L-TYPE)로 관경을 정합니다 —
+       국내 실무에서 통용되는 방법이며, 세정밸브 대변기 1개를 접속관경 그대로 25A 로 받습니다.
+       설정에서 <b>유량 구간표</b>(SAREK 계열, 마찰손실 50 mmAq/m·유속 1.5 m/s 이하)로 바꿀 수 있으나,
+       세정밸브의 순간유량을 일반 배관 기준으로 받아 1~2단계 크게 나옵니다.<br><br>
      <b>동시사용계수</b> — 공조위생 기술데이터북(한미)`);
 
   h+=dtl('1. 가장 중요한 원리 — 급수는 동시사용률을 쓰고, 배수는 쓰지 않습니다',
@@ -2191,7 +2201,13 @@ function basisGuide(){
      <b>수평주관은 구배를 먼저 정해야</b> 합니다. 구배 1/100 과 1/25 에서 허용 부하가 1.4배 차이나고,
        <b>구배 1/200 에서는 200A 미만을 아예 쓸 수 없습니다</b>(표에 값이 없음).
        완만한 구배에 작은 관을 쓰면 유속이 확보되지 않아 고형물이 퇴적됩니다.<br>
-     <b>③ 최소 관경</b> — 오수관 100A, 잡배수관 50A, 그리고 역전 금지.<br><br>
+     <b>③ 최소 관경</b> — 오수관 <b>75A</b>(국내 호칭, 원표 DN80), 잡배수관 50A, 그리고 역전 금지.<br>
+       대변기 배수는 75A 로 받되 <b>담당 대변기 수에 한도</b>가 있습니다 (표 4.1-5 주):<br>
+     ${tbl(th(['관의 위치','75A 허용','초과 시'])+
+        td(['수평지관 · 층별 횡주관','대변기 <b>2개</b> 이내','100A'])+
+        td(['입상관(수직관)','대변기 <b>6개</b> 이내','100A'])+
+        td(['건물배수 수평주관(MAIN)','대변기 <b>2개</b> 이내','100A']))}
+       예: 대변기 1~2개 지관 → <b>75A</b>, 3개 이상 → <b>100A</b>.<br><br>
      <b>오수와 잡배수를 분리</b>해 각각 산정합니다(분류식). 대·소변기가 오수,
        나머지가 잡배수입니다.`);
 
@@ -2238,16 +2254,24 @@ function basisGuide(){
      <b>Q. 구배를 바꾸면 왜 MAIN 관경이 바뀝니까?</b><br>
      A. 표 4.1-4 가 구배별 표이기 때문입니다. 구배가 완만할수록 유속이 낮아 같은 관경이 받을 수
         있는 부하가 줄어듭니다.<br><br>
-     <b>Q. 유량 구간표로 정했는데 유속을 왜 또 봅니까?</b><br>
+     <b>Q. 급수관경을 왜 관균등표로 정했습니까? 유량으로 정하면 더 크게 나오는데요.</b><br>
+     A. 세정밸브는 순간유량(96 L/min)이 크지만 몇 초 만에 끝나고, 기구 자체가 25A 접속에 고유속으로
+        설계돼 있습니다. 유량 구간표(약 1.2 m/s 기준)에 그대로 넣으면 대변기 1개에 50A 가 나와
+        실무와 맞지 않습니다. 관균등표는 접속관경 기준이라 1개 25A·2개 40A 로 현실적이며,
+        말단 압력은 <b>⑤ 압력검토</b>에서 별도로 확인하므로 공급 부족은 그쪽에서 잡힙니다.<br><br>
+     <b>Q. 유량 구간표 방식에서는 유속을 왜 또 봅니까?</b><br>
      A. 구간표가 마찰손실 기준이라 대구경에서 유속이 상한을 넘습니다. 유속이 높으면 유수음·
-        워터해머·침식부식이 생기므로 두 조건을 모두 만족시킵니다.`);
+        워터해머·침식부식이 생기므로 두 조건을 모두 만족시킵니다.<br><br>
+     <b>Q. 대변기 배수관이 왜 100A 가 아니라 75A 입니까?</b><br>
+     A. 대변기 트랩 접속은 75A(DN80)이며, KDS 표 4.1-5 주에 따라 75A 수평지관은 대변기 2개,
+        수직관은 6개까지 허용됩니다. 그 수를 넘는 구간은 자동으로 100A 가 됩니다.`);
 
   h+=dtl('7. 이 앱이 다루지 않는 것 (한계)',
     `· <b>배관 길이·보온 물량</b> — 도면(CAD) 실측의 영역입니다. 부속류는 연결 구조에서 세는 개략치입니다.<br>
      · <b>통기 표 4.3-1 원표</b> — DFU 개략표 + 1/2 규칙 + 12m 규칙으로 대신합니다.<br>
      · <b>특수 배수</b> — 주방 그리스, 실험실 폐수, 산성 배수 등은 별도 계통이며 다루지 않습니다.<br>
      · <b>우수(빗물)</b> — KDS 31 30 35 우수설비의 영역입니다.<br>
-     · <b>150A 초과 급수관</b> — 구간표가 150A 에서 끝납니다. 대형 건물은 별도 검토가 필요합니다.<br>
+     · <b>150A 초과 급수관</b> — 관균등표·구간표 모두 150A 에서 끝납니다. 대형 건물은 별도 검토가 필요합니다.<br>
      · <b>재질별 내경 차이</b> — 유속 검사는 배관용탄소강관(KS D 3507) 내경을 기준으로 합니다.<br><br>
      <b>이 계산서는 계획·기본설계 단계의 관경 산정 도구입니다.</b>
      실시설계에서는 원 기준서로 대조하고, 현장 조건(매설 깊이, 기존 관로 레벨, 통기 방식)을
@@ -3396,7 +3420,7 @@ function zonePrintSVG(z){
       // Calc pipe for this single node qty
       const cwPipe=fx.cwQ>0?Math.max(supplyPipe(fx.cwQ*(n.qty||1),fxEq(fx)*(n.qty||1)),fx.conn):0;
       const hwPipe=fx.hot?Math.max(supplyPipe(fx.cwQ*(n.qty||1),fxEq(fx)*(n.qty||1)),fx.conn):0;
-      const sewPipeD=fx.drain==='sew'?Math.max(sewPipe(fx.dfu*(n.qty||1)),100):0;
+      const sewPipeD=fx.drain==='sew'?Math.max(sewPipe(fx.dfu*(n.qty||1)),fx.dc,sewMin(WC_KEYS.includes(n.fxKey)?(n.qty||1):0,'branch')):0;
       const wstPipeD=fx.drain==='wst'?Math.max(wstPipe(fx.dfu*(n.qty||1)),50):0;
       s+=`<text x="${x+NW/2}" y="${y+11}" text-anchor="middle" font-size="7.5" font-weight="700" fill="#1a2a6c">${fx.name}</text>`;
       s+=`<text x="${x+NW/2}" y="${y+21}" text-anchor="middle" font-size="7" fill="#444">${n.qty||1}개</text>`;
@@ -3482,7 +3506,7 @@ function _printPDF(){
       DFU 는 사용빈도·동시사용 확률이 이미 반영된 단위이므로 <b>동시사용률을 별도로 곱하지 않음</b>.
       층별 횡주관은 <b>표 4.1-5 수평지관</b>, 입상관은 <b>표 4.1-5 수직관</b>(합계 + 1개 분기층당 동시 만족),
       건물배수 수평주관은 <b>표 4.1-4</b> 구배 <b>${DR_SLOPES[S.drSlope==null?1:S.drSlope]}</b> 기준.
-      오수관 최소 100A, 잡배수관 최소 50A, 상류관경은 하류 최대관경 이상 |
+      오수관 최소 75A(대변기 수평지관·주관 2개, 수직관 6개 초과 시 100A), 잡배수관 최소 50A, 상류관경은 하류 최대관경 이상 |
       통기: DFU 개략표 + 담당 배수관경의 1/2 이상, 최소 32A |
       압력손실: <b>Hazen-Williams</b> (PVC C=150, 동관 C=130, STS C=140),
       이음쇠 등가장 <b>×${(S.pressure.fittingFactor??1.4).toFixed(2)}</b> |
@@ -3549,7 +3573,7 @@ function _printPDF(){
           </div>
           <div class="note-box">
             ※ 급수·급탕은 ${S.cwSizeMode==='flow'?'유량 구간표':'관균등표'} 적용 후 기구 최소 연결관경(KS B 6301)과 비교하여 큰 값 결정 &nbsp;|&nbsp;
-            오수관 최소 100A, 배수관 최소 50A 적용
+            오수관 최소 75A(대변기 2개 초과 시 100A), 배수관 최소 50A 적용
           </div>
         </div>
       </div>
