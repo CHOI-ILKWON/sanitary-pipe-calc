@@ -344,6 +344,26 @@ function flowPipe(q){
   while(pipeVelocity(q,d)>vmax){ const n=pipeNextSize(d); if(n===d) break; d=n; }
   return d;
 }
+// 기준: WS-003 (관균등표) — 공조위생 기술데이터북(한미) 관균등표, 동관 L-TYPE 의 15A 열.
+//   그 관경 1개가 15A 관 몇 개와 같은지를 준다. 기구는 접속관경(FX[k].conn)으로 15A 환산 개수를 얻고,
+//   환산 개수에 동시사용계수를 곱한 값을 넘는 최소 관경을 고른다.
+//   2026-10-12 기본 방식을 유량 구간표 → 관균등표로 바꿨다. 유량 구간표는 세정밸브 96 L/min 을
+//   일반 배관 기준(약 1.2 m/s)으로 받아 대변기 1개에 50A 를 냈다 — 실무(25A)보다 두 단계 크다.
+//   관균등표는 세정밸브를 접속경 25A(환산 4.9)로 보므로 대변기 1개 25A, 2개 40A 가 된다.
+//   균등표는 유속 검사를 걸지 않는다 (세정밸브 25A 는 원래 고유속). 압력은 ⑤ 압력검토가 잡는다.
+//   원 엑셀 주의 — 「동시사용률을 곱한 값이 35 이상이면 마찰손실도표를 이용한다」.
+//     35 이상 구간은 eqPipe() 결과를 그대로 쓰되 화면에 표시하고 압력검토로 확인한다.
+const EQ15={15:1.00,20:2.60,25:4.90,32:9.20,40:14.50,50:30.00,65:53.00,80:84.60,100:178.00,125:280.00,150:452.00};
+const EQ_FRICTION_LIMIT=35;
+function fxEq(f){ return f.conn>0?(EQ15[f.conn]||1):0; }   // 기구 1개의 15A 환산 개수
+function eqPipe(e){
+  if(e<=0) return 0;
+  for(const d of PIPE_SIZES_ALL) if(e<=EQ15[d]+1e-9) return d;
+  return 150;
+}
+// 급수·급탕 관경 선정 — 방식에 따라 관균등표(기본) 또는 유량 구간표
+function cwSizeMode(){ return (typeof S!=='undefined'&&S.cwSizeMode==='flow')?'flow':'equiv'; }
+function supplyPipe(q,e){ return cwSizeMode()==='flow'?flowPipe(q):eqPipe(e); }
 // 기준: DR-003 — KDS 31 30 25 표 4.1-5 (배수 수평지관과 수직관)
 //   호칭 — 앱의 75A 는 원표의 DN80 에 대응하는 국내 배수관 호칭이다. 값 충돌이 아니다.
 //   장기적으로는 내부를 DN 으로 두고 화면 호칭을 배관 재질별로 매핑하는 편이 낫다 (DR-003 3.x).
@@ -414,8 +434,8 @@ function calcNode(node){
     const f=FX[k], isFV=FV_KEYS.includes(k);
     if(ct&&ct.key===k&&f.cwQ>0){
       const c=Math.min(ct.qty,n);
-      a.contCw+=f.cwQ*c; a.contCnt+=c;
-      if(f.hot) a.contHw+=f.cwQ*(f.hotShare==null?1:f.hotShare)*c;
+      a.contCw+=f.cwQ*c; a.contCnt+=c; a.contEq+=fxEq(f)*c;
+      if(f.hot){ a.contHw+=f.cwQ*(f.hotShare==null?1:f.hotShare)*c; a.contHwEq+=fxEq(f)*c; }
       a.mCw=Math.max(a.mCw,f.conn);
       a.mKPa=Math.max(a.mKPa,f.minKPa||0);
       if(f.hot) a.mHw=Math.max(a.mHw,f.conn);
@@ -430,13 +450,14 @@ function calcNode(node){
       }
     }
     if(f.cwQ>0){
-      if(isFV){a.fvCw+=f.cwQ*n; a.fvCnt+=n;} else {a.genCw+=f.cwQ*n; a.genCnt+=n;}
+      if(isFV){a.fvCw+=f.cwQ*n; a.fvEq+=fxEq(f)*n; a.fvCnt+=n;} else {a.genCw+=f.cwQ*n; a.genEq+=fxEq(f)*n; a.genCnt+=n;}
       a.mCw=Math.max(a.mCw,f.conn);
       a.mKPa=Math.max(a.mKPa,f.minKPa||0);   // 기준: WS-005 — 그 구간이 만족시켜야 할 최저 잔압
       if(f.hot){
         // 기준: HW-001 — 혼합수전은 기구 전체유량의 hotShare(0.75) 만 급탕관이 진다
         const hq=f.cwQ*(f.hotShare==null?1:f.hotShare);
-        if(isFV){a.fvHw+=hq*n; a.hwFvCnt+=n;} else {a.genHw+=hq*n; a.hwGenCnt+=n;}
+        // 관균등표는 접속관경 기준이라 급탕 분담률을 곱하지 않는다 — 급탕 접속구도 같은 관경이다
+        if(isFV){a.fvHw+=hq*n; a.fvHwEq+=fxEq(f)*n; a.hwFvCnt+=n;} else {a.genHw+=hq*n; a.genHwEq+=fxEq(f)*n; a.hwGenCnt+=n;}
         a.mHw=Math.max(a.mHw,f.conn);
       }
     }
@@ -565,19 +586,27 @@ const FV_KEYS=['wc_v','ur_v'];
 function suppSimult(a){
   const cc=a.contCw||0, ch=a.contHw||0;
   const rawCw=a.fvCw+a.genCw+cc, rawHw=a.fvHw+a.genHw+ch;
-  if(S.cwSimultMode==='legacy') return {cwQ:rawCw,hwQ:rawHw,cwF:1,hwF:1};
+  const ce=a.contEq||0, che=a.contHwEq||0;
+  if(S.cwSimultMode==='legacy') return {cwQ:rawCw,hwQ:rawHw,cwF:1,hwF:1,
+    cwE:a.fvEq+a.genEq+ce, hwE:a.fvHwEq+a.genHwEq+che};
   const cwQ=a.fvCw*fvSimult(a.fvCnt)+a.genCw*genSimult(a.genCnt)+cc;
   const hwQ=a.fvHw*fvSimult(a.hwFvCnt)+a.genHw*genSimult(a.hwGenCnt)+ch;
-  return {cwQ,hwQ,cwF:rawCw?cwQ/rawCw:1,hwF:rawHw?hwQ/rawHw:1};
+  // 관균등표 — 같은 두 곡선을 15A 환산 개수에 적용 (원 엑셀과 같은 방식)
+  const cwE=a.fvEq*fvSimult(a.fvCnt)+a.genEq*genSimult(a.genCnt)+ce;
+  const hwE=a.fvHwEq*fvSimult(a.hwFvCnt)+a.genHwEq*genSimult(a.hwGenCnt)+che;
+  return {cwQ,hwQ,cwF:rawCw?cwQ/rawCw:1,hwF:rawHw?hwQ/rawHw:1,cwE,hwE};
 }
 // ── 계층 누적기: 각 단계는 항상 '원시 합계'를 모아 자기 기구수로 계수를 적용한다
 //    (자식의 이미 계수가 곱해진 값을 다시 곱하는 이중 적용을 방지)
 function newAcc(){return {fvCw:0,genCw:0,fvHw:0,genHw:0,fvCnt:0,genCnt:0,hwFvCnt:0,hwGenCnt:0,
   contCw:0,contHw:0,contCnt:0,
+  fvEq:0,genEq:0,fvHwEq:0,genHwEq:0,contEq:0,contHwEq:0,
   sewRaw:0,wstRaw:0,sewCnt:0,wstCnt:0,mCw:0,mHw:0,mSew:0,mWst:0,mKPa:0};}
 function accAdd(a,r,skipHot){
   a.fvCw+=r.fvCw; a.genCw+=r.genCw; a.fvCnt+=r.fvCnt; a.genCnt+=r.genCnt;
   a.contCw+=r.contCw||0; a.contCnt+=r.contCnt||0; if(!skipHot)a.contHw+=r.contHw||0;
+  a.fvEq+=r.fvEq||0; a.genEq+=r.genEq||0; a.contEq+=r.contEq||0;
+  if(!skipHot){a.fvHwEq+=r.fvHwEq||0; a.genHwEq+=r.genHwEq||0; a.contHwEq+=r.contHwEq||0;}
   if(!skipHot){a.fvHw+=r.fvHw; a.genHw+=r.genHw; a.hwFvCnt+=r.hwFvCnt; a.hwGenCnt+=r.hwGenCnt;}
   a.sewRaw+=r.sewRaw; a.wstRaw+=r.wstRaw; a.sewCnt+=r.sewCnt; a.wstCnt+=r.wstCnt;
   a.mCw=Math.max(a.mCw,r.cwPipe); if(!skipHot)a.mHw=Math.max(a.mHw,r.hwPipe);
@@ -607,8 +636,9 @@ function accResult(a,kind,opt){
     cwCnt:a.fvCnt+a.genCnt+(a.contCnt||0), hwCnt:a.hwFvCnt+a.hwGenCnt,
     contCw:a.contCw||0, contHw:a.contHw||0, contCnt:a.contCnt||0,
     sewDFU:sD, wstDFU:wD,
-    cwPipe:s.cwQ>0?Math.max(flowPipe(s.cwQ),a.mCw):0,
-    hwPipe:s.hwQ>0?Math.max(flowPipe(s.hwQ),a.mHw):0,
+    cwE:s.cwE, hwE:s.hwE,
+    cwPipe:s.cwQ>0?Math.max(supplyPipe(s.cwQ,s.cwE),a.mCw):0,
+    hwPipe:s.hwQ>0?Math.max(supplyPipe(s.hwQ,s.hwE),a.mHw):0,
     sewPipe:sp, wstPipe:wp,
     sewVent: kind==='stack'?ventStack(sD,sp):ventBranch(sp,opt.ventLen),
     wstVent: kind==='stack'?ventStack(wD,wp):ventBranch(wp,opt.ventLen),
@@ -752,8 +782,9 @@ function calcMainType(type){
   if(S.cwSimultMode==='legacy'){ // 기존 방식: 메인에서만 고정 0.85
     r.cwQ=(a.fvCw+a.genCw)*0.85; r.hwQ=(a.fvHw+a.genHw)*0.85;
     r.cwSimultF=0.85; r.hwSimultF=0.85;
-    r.cwPipe=r.cwQ>0?Math.max(flowPipe(r.cwQ),a.mCw):0;
-    r.hwPipe=r.hwQ>0?Math.max(flowPipe(r.hwQ),a.mHw):0;
+    r.cwE=(a.fvEq+a.genEq+(a.contEq||0))*0.85; r.hwE=(a.fvHwEq+a.genHwEq+(a.contHwEq||0))*0.85;
+    r.cwPipe=r.cwQ>0?Math.max(supplyPipe(r.cwQ,r.cwE),a.mCw):0;
+    r.hwPipe=r.hwQ>0?Math.max(supplyPipe(r.hwQ,r.hwE),a.mHw):0;
   }
   return applyUpsize(r, main.upsize);
 }
@@ -792,6 +823,7 @@ const S={
                          // 이 선택이 위치수두의 부호를 바꾸므로 관경까지 달라진다 (AC-031 31.3.1.3)
                          // 'bottom'|'top'
   cwSimultMode:'curve',  // 'curve'(동시사용계수표)|'legacy'(메인 0.85 고정)
+  cwSizeMode:'equiv',    // 급수·급탕 관경 선정 — 'equiv'(관균등표, 기본)|'flow'(유량 구간표). 기준: WS-003
   drSlope:1,             // 건물배수 수평주관 구배 — DR_SLOPES 인덱스 (1 = 1/100)
   cwVmax:1.5,            // 급수·급탕 허용유속 상한 m/s (기준: WS-003)
   cw:{floors:[],risers:[],main:{riserIds:[],floorIds:[],zoneIds:[]}},
@@ -840,6 +872,7 @@ function normalizeState(){
   S.mainLocation = (S.supplyType==='elevated')?'top':'bottom';   // 항상 방식에서 파생
   if(!S.maxPressureKPa) S.maxPressureKPa=0;   // 최저층 최대압력(정지양정 기준). 0 이면 미입력
   if(!S.cwSimultMode) S.cwSimultMode='curve';
+  if(!S.cwSizeMode) S.cwSizeMode='equiv';   // 2026-10-12 이전 저장 파일도 관균등표로 연다
   if(!S.pressure) S.pressure={supplyKPa:250,floorH:3.0,material:'stainless',mainLen:10,branchLen:8,zoneLen:3,minResidualKPa:55,fittingFactor:1.4};
   if(S.pressure.zoneLen==null) S.pressure.zoneLen=3;
   if(!S.pressure.material) S.pressure.material='stainless';
@@ -1481,7 +1514,14 @@ function renderMainPipeTab(){
         <option value="legacy"${S.cwSimultMode==='legacy'?' selected':''}>고정 0.85 (메인만, 기존 방식)</option>
       </select>
     </label>
-    <label style="font-size:12px;color:var(--text2)">급수 허용유속:
+    <label style="font-size:12px;color:var(--text2)">급수 관경 선정:
+      <select style="margin-left:6px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 8px;font-size:12px"
+        onchange="S.cwSizeMode=this.value;renderAll()">
+        <option value="equiv"${S.cwSizeMode!=='flow'?' selected':''}>관균등표 (공조위생 기술데이터북, 권장)</option>
+        <option value="flow"${S.cwSizeMode==='flow'?' selected':''}>유량 구간표 + 유속검사 (안전측, 세정밸브 과대)</option>
+      </select>
+    </label>
+    <label style="font-size:12px;color:var(--text2)">급수 허용유속${S.cwSizeMode==='flow'?'':' (유량 구간표에만 적용)'}:
       <select style="margin-left:6px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 8px;font-size:12px"
         onchange="S.cwVmax=+this.value;renderAll()">
         ${[[1.5,'1.5 m/s (권장)'],[2.0,'2.0 m/s (허용 상한)'],[2.5,'2.5 m/s (검사 사실상 해제)']]
@@ -1592,6 +1632,9 @@ function renderResult(){
     급수 동시사용계수 ${((cm.cwSimultF||0.85)*100).toFixed(1)}%${S.cwSimultMode==='legacy'?' (고정)':
       ` — 세정밸브류(대·소변기) ${cm.fvCnt}개(${(fvSimult(cm.fvCnt)*100).toFixed(2)}%) + 일반기구 ${cm.genCnt}개(${(genSimult(cm.genCnt)*100).toFixed(2)}%)`} ·
     급탕 ${((cm.hwSimultF||0.85)*100).toFixed(1)}%${cm.hwCnt!=null?` (온수기구 ${cm.hwCnt}개)`:''} 적용 ·
+    ${S.cwSizeMode==='flow'?'관경 선정: 유량 구간표 + 유속검사':
+      `관경 선정: <b>관균등표</b> — 급수 15A 환산 ${(cm.cwE||0).toFixed(1)} · 급탕 ${(cm.hwE||0).toFixed(1)}`+
+      ((cm.cwE||0)>=EQ_FRICTION_LIMIT?` <span style="color:var(--warn)">(환산 ${EQ_FRICTION_LIMIT} 이상 — 압력검토 탭에서 마찰손실 확인 권장)</span>`:'')} ·
     계수표 출처: 공조위생 기술데이터북(한미) — 화장실·층·입상관·MAIN 각 단계에서 그 구간 담당 기구수로 적용 ·
     <span style="color:var(--warn)">통기관경은 개략값입니다 — KDS 표 4.3-1 검증 필요</span>.
     신정통기관·통기수직관은 담당 배수수직관경·총 DFU·전개길이 세 값으로 정해야 하는데 원표를 확보하지 못했습니다 (DR-004).
@@ -2119,10 +2162,18 @@ function basisGuide(){
      &nbsp;&nbsp;<b>화장실 → 층 → 입상관 → MAIN 각 단계마다</b> 그 단계가 담당하는 기구수로 적용하며,
        각 단계는 항상 <b>원시 합계</b>를 모아 계산합니다 — 이미 계수가 곱해진 값에 다시 곱하는
        <b>이중 적용을 금지</b>합니다.<br>
-     <b>④ 유량 구간표</b> — 설계유량으로 관경을 선정합니다. 이 표는 <b>마찰손실 기준</b>이며
+     ${S.cwSizeMode==='flow'?
+     `<b>④ 유량 구간표</b> — 설계유량으로 관경을 선정합니다. 이 표는 <b>마찰손실 기준</b>이며
        전 구간 약 19~29 mmAq/m 입니다(기준 50 이하).<br>
      <b>⑤ 유속 검사</b> — 구간표가 마찰손실 기준이라 대구경에서 유속이 올라갑니다.
-       선정된 관경의 유속이 <b>${S.cwVmax||1.5} m/s</b>를 넘으면 한 단계 올립니다.<br><br>
+       선정된 관경의 유속이 <b>${S.cwVmax||1.5} m/s</b>를 넘으면 한 단계 올립니다.<br><br>`:
+     `<b>④ 관균등표</b> — 관경은 유량이 아니라 <b>15A 환산 개수</b>로 정합니다 (공조위생 기술데이터북, 동관 L-TYPE).
+       기구마다 접속관경으로 환산합니다 — 세정밸브 대변기 25A = <b>4.9</b>, 20A 기구 = 2.6, 15A 기구 = 1.0.
+       ②·③과 같은 방법으로 <b>환산 개수 합계 × 동시사용계수</b>를 구하고,
+       그 값 이상을 감당하는 최소 관경을 고릅니다 (25A 4.9 · 32A 9.2 · 40A 14.5 · 50A 30 · 65A 53 · 80A 84.6 · 100A 178).<br>
+       예: 세정밸브 대변기 1개 → 4.9 → <b>25A</b>, 2개 → 9.8 → <b>40A</b>.<br>
+     <b>⑤ 압력 확인</b> — 균등표는 유속 검사를 하지 않습니다. 환산값 ${EQ_FRICTION_LIMIT} 이상 구간과
+       말단 잔압은 <b>⑤ 압력검토 탭</b>에서 확인합니다. 설계유량(L/min)은 압력검토용으로 함께 표시합니다.<br><br>`}
      추가로 <b>기구급수관 최소 관지름</b>(KDS 표 4.5-1, 예: 세정밸브 DN25)과
      <b>역전 금지</b>(상류 관경 ≥ 하류 최대 관경)를 항상 만족시킵니다.`);
 
@@ -2215,7 +2266,8 @@ function exportCSV(){
   S.projectName=document.getElementById('projectName').value||S.projectName;
   const rows=[];
   rows.push([S.projectName+' — 위생배관 관경 계산서','출력일 '+new Date().toISOString().slice(0,10),
-    '동시사용계수: '+(S.cwSimultMode==='legacy'?'고정 0.85(메인만)':'공조위생 기술데이터북 표 — 화장실·층·입상관·메인 각 단계 적용')]);
+    '동시사용계수: '+(S.cwSimultMode==='legacy'?'고정 0.85(메인만)':'공조위생 기술데이터북 표 — 화장실·층·입상관·메인 각 단계 적용'),
+    '급수 관경 선정: '+(S.cwSizeMode==='flow'?'유량 구간표 + 유속검사':'관균등표 (15A 환산 개수)')]);
   rows.push([]);
   rows.push(['[존별 관경]','층','급수 L/min','급수관','급탕 L/min','급탕관','오수 DFU','오수관','잡배수 DFU','잡배수관','기구 구성']);
   for(const z of S.zones){
@@ -2716,7 +2768,7 @@ function resetAll(){
   S.projectName='새 프로젝트';
   S.zones=[];
   S.supplyType='booster'; S.mainLocation='bottom'; S.maxPressureKPa=0;
-  S.cwSimultMode='curve';
+  S.cwSimultMode='curve'; S.cwSizeMode='equiv';
   S.cw={floors:[],risers:[],main:{riserIds:[],floorIds:[],zoneIds:[]}};
   S.dr={floors:[],risers:[],main:{riserIds:[],floorIds:[],zoneIds:[]}};
   S.pressure={supplyKPa:250,floorH:3.0,material:'stainless',mainLen:10,branchLen:8,zoneLen:3,minResidualKPa:55,fittingFactor:1.4};
@@ -3342,8 +3394,8 @@ function zonePrintSVG(z){
     } else if(n.type==='fixture'&&n.fxKey&&FX[n.fxKey]){
       const fx=FX[n.fxKey];
       // Calc pipe for this single node qty
-      const cwPipe=flowPipe(fx.cwQ*(n.qty||1));
-      const hwPipe=fx.hot?flowPipe(fx.cwQ*(n.qty||1)):0;
+      const cwPipe=fx.cwQ>0?Math.max(supplyPipe(fx.cwQ*(n.qty||1),fxEq(fx)*(n.qty||1)),fx.conn):0;
+      const hwPipe=fx.hot?Math.max(supplyPipe(fx.cwQ*(n.qty||1),fxEq(fx)*(n.qty||1)),fx.conn):0;
       const sewPipeD=fx.drain==='sew'?Math.max(sewPipe(fx.dfu*(n.qty||1)),100):0;
       const wstPipeD=fx.drain==='wst'?Math.max(wstPipe(fx.dfu*(n.qty||1)),50):0;
       s+=`<text x="${x+NW/2}" y="${y+11}" text-anchor="middle" font-size="7.5" font-weight="700" fill="#1a2a6c">${fx.name}</text>`;
@@ -3418,9 +3470,13 @@ function _printPDF(){
       ? '<b>고정 0.85</b> (MAIN 단계만)'
       : '<b>동시사용계수표</b> (공조위생 기술데이터북) — 화장실·층·입상관·MAIN 각 단계 적용';
     return `<div class="basis-box"><b>산정 기준</b> |
-      급수·급탕: <b>기구 순간유량 합산 → 동시사용계수 적용 → 유량 구간표</b>로 관경 결정
+      ${S.cwSizeMode==='flow'?
+      `급수·급탕: <b>기구 순간유량 합산 → 동시사용계수 적용 → 유량 구간표</b>로 관경 결정
       (구간표는 마찰손실 기준, 약 19~29 mmAq/m). 추가로 <b>허용유속 ${S.cwVmax||1.5} m/s</b> 검사를 걸어
-      초과 시 한 단계 상향 (내경은 KS D 3507 배관용탄소강관 기준).
+      초과 시 한 단계 상향 (내경은 KS D 3507 배관용탄소강관 기준).`:
+      `급수·급탕: <b>관균등표</b>(공조위생 기술데이터북, 동관 L-TYPE)로 관경 결정 —
+      기구 접속관경의 <b>15A 환산 개수 합산 → 동시사용계수 적용</b> → 환산값 이상을 감당하는 최소 관경
+      (세정밸브 25A = 4.9, 20A 기구 = 2.6, 15A 기구 = 1.0).`}
       동시사용계수 ${sm} |
       오배수: <b>기구배수부하단위(DFU) 합계</b>로 관경 결정 (KDS 31 30 25 배수통기설비, 4.1.4·4.1.5).
       DFU 는 사용빈도·동시사용 확률이 이미 반영된 단위이므로 <b>동시사용률을 별도로 곱하지 않음</b>.
@@ -3492,7 +3548,7 @@ function _printPDF(){
               <div class="sub">${r.wstDFU>0?'DFU '+r.wstDFU:'없음'}</div></div>
           </div>
           <div class="note-box">
-            ※ Hunter 곡선 적용 후 기구 최소 연결관경(KS B 6301)과 비교하여 큰 값 결정 &nbsp;|&nbsp;
+            ※ 급수·급탕은 ${S.cwSizeMode==='flow'?'유량 구간표':'관균등표'} 적용 후 기구 최소 연결관경(KS B 6301)과 비교하여 큰 값 결정 &nbsp;|&nbsp;
             오수관 최소 100A, 배수관 최소 50A 적용
           </div>
         </div>

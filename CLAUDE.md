@@ -40,7 +40,7 @@ function flowPipe(q){ ... }
 |---|---|---|
 | `WS-001` | 기구별 급수 순간유량·접속관경 | `FX` 상수 |
 | `WS-002` | 급수·급탕 동시사용계수 | `SIM_N`/`SIM_FV`/`SIM_GEN` |
-| `WS-003` | 급수관경 유량 구간표 | `flowPipe()` |
+| `WS-003` | 급수관경 — 관균등표(기본)·유량 구간표(선택) | `EQ15`/`eqPipe()`/`flowPipe()`/`supplyPipe()` |
 | `DR-001` | 기구배수부하단위(DFU)·기구배수관경 | `FX` 상수 |
 | `DR-002` | 배수 동시사용률 | DFU 합계를 그대로 쓴다 (별도 계수 없음) |
 | `DR-003` | 배수관경 DFU 구간표 | `DR_TBL`/`branchPipe()`/`stackPipe()` |
