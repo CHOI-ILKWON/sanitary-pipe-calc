@@ -2816,10 +2816,26 @@ function resetAll(){
   document.getElementById('projectName').value='새 프로젝트';
   renderAll();
 }
+// 기준: 통합기준 U16 (토론 D18) — 밸브 앱이 65A·40A 기본값 대신 이 계산 결과(배관별 관경)를 받도록 저장 파일에 함께 싣는다.
+//   불러올 때는 results 를 무시한다(입력 S 만 복원, 결과는 항상 다시 계산).
+function exportResults(){
+  const zoneOut=z=>{const r=calcZone(z),t=zoneFxTotals(z);return {id:z.id,name:z.name,cwPipe:r.cwPipe,cwQ:r.cwQ,reqKPa:r.mKPa||null,fvCnt:(t.wc_v||0)+(t.ur_v||0)};};
+  const risers=S.cw.risers.map(ri=>{
+    const rr=calcRiser(ri,'cw');
+    const fls=ri.floorIds.map(fid=>S.cw.floors.find(f=>f.id===fid)).filter(Boolean);
+    const zs=[...fls.flatMap(f=>f.zoneIds),...ri.zoneIds].map(zid=>S.zones.find(z=>z.id===zid)).filter(Boolean).map(zoneOut);
+    return {id:ri.id,name:ri.name,cwPipe:rr.cwPipe,cwQ:rr.cwQ,
+      floors:fls.map(f=>({id:f.id,name:f.name,cwPipe:calcFloor(f,'cw').cwPipe})),
+      zones:zs, reqKPa:Math.max(0,...zs.map(z=>z.reqKPa||0))||null};
+  });
+  const m=calcMainType('cw');
+  return {ruleVersion:'SAN-2026-10-16-2', supplyKPa:supplyKPaOrNull(S.pressure), cw:{main:{cwPipe:m.cwPipe,cwQ:m.cwQ}, risers}};
+}
 function saveJSON(){
   S.projectName=document.getElementById('projectName').value||S.projectName;
   const a=document.createElement('a');
-  a.href=URL.createObjectURL(new Blob([JSON.stringify(S,null,2)],{type:'application/json'}));
+  let out=S; try{ out=Object.assign({},S,{results:exportResults()}); }catch(err){ console.warn('results export failed',err); }
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(out,null,2)],{type:'application/json'}));
   a.download=(S.projectName||'프로젝트')+'.json'; a.click();
 }
 function loadJSON(e){
@@ -2828,6 +2844,7 @@ function loadJSON(e){
   r.onload=ev=>{
     try{
       const d=JSON.parse(ev.target.result);
+      delete d.results;   // 저장된 계산 결과는 쓰지 않고 다시 계산한다 (D18)
       Object.assign(S,d);
       normalizeState();
       document.getElementById('projectName').value=S.projectName||'';
@@ -2866,6 +2883,7 @@ try{
   if(saved){
     const d=JSON.parse(saved);
     if(d&&d.zones){
+      delete d.results;   // 저장된 계산 결과는 쓰지 않고 다시 계산한다 (D18)
       Object.assign(S,d);
       normalizeState();
       activeZone=S.zones[0]?.id||null;
