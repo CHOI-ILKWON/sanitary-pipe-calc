@@ -281,7 +281,7 @@ const FX_KEYS = ['wc_v','wc_t','ur_v','ur_t','bas_p','bas_i','shw','bath','sink'
 const FX = {
   wc_v:  {name:'대변기(세정밸브)', cwQ:96, conn:25, hot:false, dfu:4,  drain:'sew', dc:80,  minKPa:100},
   wc_t:  {name:'대변기(세정탱크)', cwQ:11, conn:15, hot:false, dfu:4,  drain:'sew', dc:80,  minKPa:55},
-  ur_v:  {name:'소변기(세정밸브)', cwQ:45, conn:20, hot:false, dfu:4,  drain:'sew', dc:50,  minKPa:100},
+  ur_v:  {name:'소변기(세정밸브)', cwQ:45, conn:15, hot:false, dfu:4,  drain:'sew', dc:50,  minKPa:100},   // 기준: WS-001·통합기준 U02 (D01) — 당사 위생배관관경결정6.5 급수관경결정 B19 15A·C19 환산 1.0. KDS 31 30 15 표 4.5-1 인용값(DN20)과의 차이는 통합기준 차이기록 참조
   ur_t:  {name:'소변기(세정탱크)', cwQ:6,  conn:15, hot:false, dfu:4,  drain:'sew', dc:50,  minKPa:55},
   // 기준: HW-001 — 혼합수전의 급탕 분담률. 기구 전체유량의 75% 만 급탕관이 진다.
   //   냉수와 온수를 섞어 쓰므로 급탕관에 전량을 넣으면 과대해진다.
@@ -589,9 +589,10 @@ function simLookup(n,arr){
 }
 function fvSimult(n){ return simLookup(n,SIM_FV); }   // 대변기(세정밸브)
 function genSimult(n){ return simLookup(n,SIM_GEN); } // 일반기구
-// 세정밸브류(대·소변기)는 별도 곡선 — 그룹별 유량에 각자의 계수를 적용 후 합산
-// 소변기 세정밸브도 플러시밸브라 순간유량 특성이 같으므로 대변기와 동일 곡선 적용
-const FV_KEYS=['wc_v','ur_v'];
+// 세정밸브 곡선은 대변기(세정밸브)만 — 그룹별 유량에 각자의 계수를 적용 후 합산
+// 기준: WS-002·통합기준 U03 (D04) — 당사 엑셀 6.5 「급수관경결정」은 소변기를 일반기구 계(A25)로 묶는다.
+//   소변기(세정밸브)는 동시사용 계산에서 일반기구 곡선. 단 최저 필요압 100 kPa(minKPa)는 그대로 둔다.
+const FV_KEYS=['wc_v'];
 // 기준: WS-002 3.7.2 — Q = (일반기구 동시사용유량) + Σ(연속사용 유량)
 //   연속사용분은 계수를 곱하지 않는다. 그 시간 동안 확률이 1 이기 때문이다 (3.5.4 b).
 function suppSimult(a){
@@ -1641,7 +1642,7 @@ function renderResult(){
   </div>
   <div style="font-size:10.5px;color:var(--text2);margin-bottom:12px">
     급수 동시사용계수 ${((cm.cwSimultF||0.85)*100).toFixed(1)}%${S.cwSimultMode==='legacy'?' (고정)':
-      ` — 세정밸브류(대·소변기) ${cm.fvCnt}개(${(fvSimult(cm.fvCnt)*100).toFixed(2)}%) + 일반기구 ${cm.genCnt}개(${(genSimult(cm.genCnt)*100).toFixed(2)}%)`} ·
+      ` — 대변기(세정밸브) ${cm.fvCnt}개(${(fvSimult(cm.fvCnt)*100).toFixed(2)}%) + 일반기구 ${cm.genCnt}개(${(genSimult(cm.genCnt)*100).toFixed(2)}%)`} ·
     급탕 ${((cm.hwSimultF||0.85)*100).toFixed(1)}%${cm.hwCnt!=null?` (온수기구 ${cm.hwCnt}개)`:''} 적용 ·
     ${S.cwSizeMode==='flow'?'관경 선정: 유량 구간표 + 유속검사':
       `관경 선정: <b>관균등표</b> — 급수 15A 환산 ${(cm.cwE||0).toFixed(1)} · 급탕 ${(cm.hwE||0).toFixed(1)}`+
@@ -1708,7 +1709,8 @@ function zoneValves(z){
   add('세탁기 수전','세탁기 급수전(원터치)','15A',wsh,`세탁기 ${wsh}대`);
   // 세정밸브(기구 부속 — 수량 확인용)
   const flush=(t.wc_v||0)+(t.ur_v||0);
-  add('세정밸브(플러시)','대·소변기 세정밸브',t.wc_v?'25A':'20A',flush,'기구 부속 — 수량 확인용');
+  if(t.wc_v) add('세정밸브(플러시)','대변기 세정밸브','25A',t.wc_v,'기구 부속 — 수량 확인용');
+  if(t.ur_v) add('세정밸브(플러시)','소변기 세정밸브','15A',t.ur_v,'기구 부속 — 수량 확인용 (당사 15A, D01)');
   // 소형 수격방지기 — 세정밸브 계열이 있는 존의 분기 말단
   if(flush){
     const whaN=Math.max(1,flushDeadEnds(z));   // 기준: WS-006 Rule 1
@@ -2169,7 +2171,7 @@ function basisGuide(){
        세면기 0.1 L/s = 6 L/min. 세정밸브는 순간유량이 매우 큽니다.<br>
      <b>② 구간별 합산</b> — 그 구간이 담당하는 기구의 유량을 더합니다.<br>
      <b>③ 동시사용계수</b> — 기구수에 따라 곱합니다. <b>곡선이 두 개</b>입니다:<br>
-     &nbsp;&nbsp;· <b>세정밸브류</b>(대·소변기 플러시밸브): 순간유량이 크고 사용시간이 짧아 계수가 급격히 떨어집니다(기구 100개에 10%).<br>
+     &nbsp;&nbsp;· <b>대변기 세정밸브</b>: 순간유량이 크고 사용시간이 짧아 계수가 급격히 떨어집니다(기구 100개에 10%). 소변기는 당사 기준(엑셀 6.5)에 따라 일반기구 곡선입니다.<br>
      &nbsp;&nbsp;· <b>일반기구</b>: 완만합니다(기구 100개에 33%).<br>
      &nbsp;&nbsp;두 그룹에 각자의 계수를 적용한 뒤 <b>합산</b>합니다.<br>
      &nbsp;&nbsp;<b>화장실 → 층 → 입상관 → MAIN 각 단계마다</b> 그 단계가 담당하는 기구수로 적용하며,
