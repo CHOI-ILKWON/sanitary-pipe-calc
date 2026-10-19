@@ -3379,7 +3379,7 @@ function renderPressureTab(){
   if(S.cw.risers.length){
     const cwPaths=calcAllPressurePaths('cw');
     h+=renderPressurePathResult(cwPaths,'cw',true);
-    h+=velWarnBox(cwPaths)+hvacPumpBox(cwPaths);
+    h+=hvacPumpBox(cwPaths);
   } else {
     h+=`<div class="empty">탭 ②에서 입상관을 설정하세요</div>`;
   }
@@ -3393,7 +3393,7 @@ function renderPressureTab(){
   const hwPathsReal=S.cw.risers.length?calcAllPressurePaths('cw',true).filter(p=>p.segments.some(g=>g.Q>0)):[];
   const elecOnly=S.zones.length&&S.zones.every(z=>z.elecHW);
   if(hwPathsReal.length){
-    h+=renderPressurePathResult(hwPathsReal,'cw',false)+velWarnBox(hwPathsReal);
+    h+=renderPressurePathResult(hwPathsReal,'cw',false);
   } else {
     h+=`<div class="empty">${elecOnly?'모든 화장실이 개별 전기온수기 — 급탕 압력은 각 층 급수 압력과 같으므로 별도 검토하지 않습니다':'급탕 배관이 없거나 탭 ②에서 입상관 설정 필요'}<br><small>화장실마다 전기온수기를 쓰면 화장실 설정의 「개별 전기온수기」를 체크하세요 — 그 화장실은 급탕 경로 검토에서 빠집니다</small></div>`;
   }
@@ -3402,22 +3402,6 @@ function renderPressureTab(){
 }
 
 function setPressure(key,val){S.pressure[key]=val;renderPressureTab();}
-// 2026-10-19 — 잔압이 충분해도 유속이 허용값을 넘는 구간을 알린다 (기준: WS-003 허용유속 S.cwVmax, 기본 1.5 m/s)
-function velWarnBox(paths){
-  const vmax=S.cwVmax||1.5, mat=S.pressure.material, seen={}, out=[];
-  for(const p of paths) for(const g of p.segments){
-    if(!(g.Q>0&&g.D>0)) continue;
-    const k=g.name.replace(/ \(수평 최원 기준\)/,'')+'|'+g.D; if(seen[k]) continue; seen[k]=1;
-    const d=innerDiaMm(g.D,mat)/1000, v=(g.Q/60000)/(Math.PI*d*d/4);
-    if(v>vmax) out.push({n:k.split('|')[0],D:g.D,Q:g.Q,v});
-  }
-  if(!out.length) return '';
-  out.sort((a,b)=>b.v-a.v);
-  return `<div style="margin-top:10px;padding:10px 12px;border:1.5px solid var(--red);border-radius:8px;background:rgba(220,38,38,.06);font-size:11.5px">
-    <div style="font-weight:700;color:var(--red);margin-bottom:4px">⚠ 유속 초과 구간 — 허용 ${vmax} m/s (잔압이 충분해도 소음·수격·마모 우려)</div>
-    ${out.map(o=>`<div>${esc(o.n)} · ${o.D}A · ${o.Q.toFixed(0)} L/min → <b>${o.v.toFixed(2)} m/s</b></div>`).join('')}
-    <div style="font-size:10px;color:var(--text3);margin-top:4px">관경 선정 방식(관균등표/유량표)과 별개로 확인한다. 한 단계 큰 관경으로 올리거나 계통을 나눈다</div></div>`;
-}
 // 부하계산서(hvac-calc) 부스터펌프 「수두 계산」 에 옮겨 넣을 값 (2026-10-19 사용자 요청)
 //   H1 — 경로 마찰손실 합(위치수두 제외)이 가장 큰 경로. 등가장 계수가 이미 들어 있으므로 hvac-calc 의
 //   「관경 앱 마찰손실 직접 입력」 칸에 넣는다(그 칸을 쓰면 H2 = 0). H3 — 경로 요구압 최댓값. H5 — 시작 층 → 최고 경로 층
