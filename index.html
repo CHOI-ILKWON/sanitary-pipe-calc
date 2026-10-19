@@ -2993,8 +2993,25 @@ function resetUpsize(){
   alert(n?'상향을 모두 해제했습니다.':'해제할 상향이 없습니다.');
 }
 
-function calcAllPressurePaths(type){
-  const P=S.pressure,isCW=type==='cw',isTop=S.mainLocation==='top';
+// 층 이름 → 층 번호. 「4층」「4F」→4, 「B1」「지하1층」→0, 「B2」→−1. 숫자가 없으면 null (목록 순서로 계산)
+function floorNum(name){
+  const t=String(name==null?'':name);
+  let m=t.match(/(?:B|지하)\s*(\d+)/i); if(m) return 1-(+m[1]);
+  m=t.match(/(\d+)/); return m?+m[1]:null;
+}
+// 급수 시작점(펌프·수조 출구) 층. 입력이 없으면 하향식은 최고층 위(옥상), 상향식은 1층
+function srcFloor(){
+  const v=floorNum(S.pressure.pumpFloor); if(v!=null) return v;
+  if(S.mainLocation==='top'){ const ns=S.cw.floors.map(f=>floorNum(f.name)).filter(n=>n!=null); return ns.length?Math.max(...ns)+1:1; }
+  return 1;
+}
+// 2026-10-19 — 높이(위치수두)는 층 이름의 번호로 계산한다: (그 층 − 급수 시작 층) × 층고.
+//   종전에는 입상관에 넣은 층 목록의 순서로 계산해, 화장실이 있는 층만 넣으면(예: 2층·4층) 높이가 틀렸다.
+//   층 번호를 읽을 수 없으면 종전 방식(목록 순서)으로 계산한다. 밸브 앱의 (층−1)×층고 와 같은 기준(펌프 1층일 때).
+function calcAllPressurePaths(type,hw){
+  const P=S.pressure,isCW=!hw,isTop=S.mainLocation==='top';
+  const src=srcFloor();
+  const elevOf=(name,fallbackM)=>{ const n=floorNum(name); const m=(n==null)?fallbackM:(n-src)*P.floorH; return {m:Math.abs(m),loss:elevLossKPa(m)}; };
   const mat=P.material,floorH=P.floorH,mainLen=P.mainLen;
   // 2026-10-19 사용자 결정 — 수평 배관 길이는 입상관마다 「최원 경로 수평길이」 1개만 받는다
   //   (입상관 분기 → 그 입상관의 가장 먼 화장실 말단까지). 밸브 앱의 입상관별 수평길이와 같은 값이다.
@@ -3026,13 +3043,12 @@ function calcAllPressurePaths(type){
       // Elevation: isTop=true → going down (gain), isTop=false → going up (loss)
       // 기준: 통합기준 U11 (토론 D12) — 상향급수 개략 높이 = (해당 층 − 1) × 층고. 최종은 실제 높이 차.
       const elevFloors=isTop?(fi+1):(riFloors.length-fi-1);
-      const elevM=elevFloors*floorH;
-      const rawElev=elevLossKPa(elevM);
-      const elevLoss=isTop?-rawElev:rawElev;
+      const ev=elevOf(fl.name,(isTop?-1:1)*elevFloors*floorH);
+      const elevM=ev.m, elevLoss=ev.loss;
       const riserFriction=frictionLossKPa(riserQ,riserD,elevM*ff,mat);
       const hL=hOf(ri);
 
-      const flZones=fl.zoneIds.map(zid=>S.zones.find(z=>z.id===zid)).filter(Boolean);
+      const flZones=fl.zoneIds.map(zid=>S.zones.find(z=>z.id===zid)).filter(Boolean).filter(z=>isCW||!z.elecHW);
       for(const z of flZones){
         const zr=calcZone(z);
         const zQ=isCW?zr.cwQ:zr.hwQ;
@@ -3044,7 +3060,7 @@ function calcAllPressurePaths(type){
           label:`${ri.name} → ${fl.name} → ${z.name}`,
           ids:{r:ri.id,f:fl.id,z:z.id}, lenDefault:!(+ri.hLen>0),
           segments:[
-            {name:'MAIN관',Q:mainQ,D:mainD,L:mainLen,friction:mainFriction,elev:0},
+            {name:isCW?'MAIN관':'MAIN관(급탕)',Q:mainQ,D:mainD,L:mainLen,friction:mainFriction,elev:0},
             {name:ri.name+' 수직',Q:riserQ,D:riserD,L:elevM,friction:riserFriction,elev:elevLoss},
             {name:fl.name+' 분기'+(h.byFloor?' (수평 최원 기준)':''),Q:flQ,D:flD,L:h.byFloor?hL:0,friction:h.byFloor?h.f:0,elev:0},
             {name:z.name+(h.byFloor?'':' (수평 최원 기준)'),Q:zQ,D:zD,L:h.byFloor?0:hL,friction:h.byFloor?0:h.f,elev:0}
@@ -3058,13 +3074,13 @@ function calcAllPressurePaths(type){
 
     // Direct zones (no floor)
     for(const zid of ri.zoneIds){
-      const z=S.zones.find(z=>z.id===zid);if(!z)continue;
+      const z=S.zones.find(z=>z.id===zid);if(!z||(!isCW&&z.elecHW))continue;
       const zr=calcZone(z);
       const zQ=isCW?zr.cwQ:zr.hwQ;
       const zD=isCW?zr.cwPipe:zr.hwPipe;
       if(!zQ||!zD)continue;
-      const elevM=floorH;
-      const elevLoss=isTop?-elevLossKPa(elevM):elevLossKPa(elevM);
+      const ev=elevOf(z.floor||z.name,(isTop?-1:1)*floorH);
+      const elevM=ev.m, elevLoss=ev.loss;
       const riserFriction=frictionLossKPa(riserQ,riserD,elevM*ff,mat);
       const hLz=hOf(ri), zoneFriction=frictionLossKPa(zQ,zD,hLz*ff,mat);
       const totalLoss=mainFriction+riserFriction+zoneFriction+elevLoss;
@@ -3089,11 +3105,11 @@ function calcAllPressurePaths(type){
     const flQ=isCW?flR.cwQ:flR.hwQ;
     const flD=isCW?flR.cwPipe:flR.hwPipe;
     if(!flQ||!flD)continue;
-    const elevM=floorH;
-    const elevLoss=isTop?-elevLossKPa(elevM):elevLossKPa(elevM);
+    const ev=elevOf(fl.name,(isTop?-1:1)*floorH);
+    const elevLoss=ev.loss;
     const hLm=hOf(S[type].main);
     for(const zid of fl.zoneIds){
-      const z=S.zones.find(z=>z.id===zid);if(!z)continue;
+      const z=S.zones.find(z=>z.id===zid);if(!z||(!isCW&&z.elecHW))continue;
       const zr=calcZone(z);
       const zQ=isCW?zr.cwQ:zr.hwQ, zD=isCW?zr.cwPipe:zr.hwPipe;
       if(!zQ||!zD)continue;
@@ -3115,12 +3131,12 @@ function calcAllPressurePaths(type){
   }
   // 메인 직결 존
   for(const zid of S[type].main.zoneIds){
-    const z=S.zones.find(z=>z.id===zid);if(!z)continue;
+    const z=S.zones.find(z=>z.id===zid);if(!z||(!isCW&&z.elecHW))continue;
     const zr=calcZone(z);
     const zQ=isCW?zr.cwQ:zr.hwQ, zD=isCW?zr.cwPipe:zr.hwPipe;
     if(!zQ||!zD)continue;
-    const elevM=floorH;
-    const elevLoss=isTop?-elevLossKPa(elevM):elevLossKPa(elevM);
+    const ev=elevOf(z.floor||z.name,(isTop?-1:1)*floorH);
+    const elevLoss=ev.loss;
     const hLd=hOf(S[type].main), zoneFriction=frictionLossKPa(zQ,zD,hLd*ff,mat);
     const totalLoss=mainFriction+zoneFriction+elevLoss;
     paths.push({
@@ -3290,6 +3306,11 @@ function renderPressureTab(){
       <div style="font-size:10px;color:var(--text3);margin-top:2px">${S.supplyType==='elevated'?'수조 저수위 기준. 비우면 공급압력으로 봅니다':'펌프 정지양정(Shut-off) 기준. 정격 운전점이 아닙니다 — AC-031 31.3.2.4 b)'}</div></div>
     <div style="margin-bottom:10px"><div style="font-size:10.5px;color:var(--text2);margin-bottom:3px">층고 (m)</div>
       ${inp('floorH',P.floorH,2,10,0.1)}</div>
+    <div style="margin-bottom:10px"><div style="font-size:10.5px;color:var(--text2);margin-bottom:3px">급수 시작 위치 층 (펌프·수조)</div>
+      <input type="text" value="${esc(P.pumpFloor||'')}" placeholder="${S.mainLocation==='top'?'비우면 최고층 위(옥상)':'비우면 1층'}"
+        onchange="setPressure('pumpFloor',this.value.trim())"
+        style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:6px;font-size:12px;box-sizing:border-box">
+      <div style="font-size:10px;color:var(--text3);margin-top:2px">예: 1 · B1 · 지하2. 높이 = (층 이름의 번호 − 이 층) × 층고 — 층 이름에 번호(2층·4F)가 있어야 합니다. 현재 ${srcFloor()}층 기준</div></div>
     <div style="margin-bottom:10px"><div style="font-size:10.5px;color:var(--text2);margin-bottom:3px">배관 재질</div>
       <select onchange="setPressure('material',this.value)"
         style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:6px;font-size:12px">
@@ -3310,7 +3331,7 @@ function renderPressureTab(){
       ${(S.cw.risers.some(r=>!(+r.hLen>0)))?`<div style="font-size:9.5px;color:var(--warn);margin-top:4px">빈칸은 기본 ${(+P.branchLen||8)+(+P.zoneLen||3)} m 로 계산 중 — 도면 길이를 넣으세요</div>`:''}
     </div>
     <div style="margin-bottom:6px"><div style="font-size:10.5px;color:var(--text2);margin-bottom:3px">최소 잔압 기준 (kPa)</div>
-      ${inp('minResidualKPa',P.minResidualKPa,30,200,5,'건물 내 기구 중 가장 높은 값 적용')}</div>
+      ${inp('minResidualKPa',P.minResidualKPa,30,200,5,'모든 경로에 거는 하한값 (기본 55). 기구별 필요압(세정밸브 100·샤워 70·일반 55)은 경로마다 자동 적용되므로 높은 값을 넣을 필요 없음 — 올리면 일반 기구 경로까지 그 압력을 요구')}</div>
     <div style="margin-bottom:6px"><div style="font-size:10.5px;color:var(--text2);margin-bottom:3px">이음쇠 등가장 계수</div>
       ${inp('fittingFactor',P.fittingFactor??1.4,1.0,2.0,0.05,'직관 실장 × 계수 — 엘보·티·밸브의 상당길이 반영 (실무 1.3~1.5)')}</div>
     <div style="display:flex;gap:6px;margin:12px 0 4px">
@@ -3342,8 +3363,7 @@ function renderPressureTab(){
       </div>
     </details>
     <div style="font-size:10px;color:var(--warn);margin-top:12px;line-height:1.6;padding:8px;background:rgba(224,168,92,0.10);border:1px solid var(--warn);border-radius:6px">
-      ⚠ <b>층 순서가 곧 높이입니다.</b> ②·③ 탭의 입상관에서 층을 <b>위층부터</b> 나열하세요
-      (예: 10층 → 9층 → … → 1층). 목록의 첫 층을 가장 높은 층으로 보고 위치수두를 계산합니다.
+      ⚠ <b>높이는 층 이름의 번호로 계산합니다</b> (예: 「4층」「4F」→ 4, 「B1」→ 지하 1층). 이름에 번호가 없으면 입상관 층 목록 순서(위층부터)로 계산합니다.
     </div>
     <div style="font-size:10px;color:var(--text3);margin-top:10px;line-height:1.6;padding:8px;background:var(--surface2);border-radius:6px">
       ※ 수평 마찰은 입상관별 최원 경로 길이로 계산합니다 — 층 분기관·화장실 분기관 중 마찰이 큰 쪽 기준 (예비, 안전측)<br>
@@ -3359,6 +3379,7 @@ function renderPressureTab(){
   if(S.cw.risers.length){
     const cwPaths=calcAllPressurePaths('cw');
     h+=renderPressurePathResult(cwPaths,'cw',true);
+    h+=velWarnBox(cwPaths)+hvacPumpBox(cwPaths);
   } else {
     h+=`<div class="empty">탭 ②에서 입상관을 설정하세요</div>`;
   }
@@ -3367,64 +3388,60 @@ function renderPressureTab(){
   // HW note (급탕)
   h+=`<div class="section">
     <div class="section-title">급탕 압력검토</div>`;
-  const hwPaths=calcAllPressurePaths('cw').filter(p=>p.segments.some(s=>s.Q>0));
-  // For HW, recalculate using hwQ/hwPipe
-  const hwPathsReal=[];
-  if(S.cw.risers.length){
-    const P=S.pressure,isTop=S.mainLocation==='top';
-    const mat=P.material,zoneLen=P.zoneLen||3;
-    const ff=(P.fittingFactor==null?1.4:P.fittingFactor);   // 기준: WS-005 등가장 계수
-    const mainR=calcMainType('cw');
-    const mainQ=mainR.hwQ,mainD=mainR.hwPipe;
-    const mainFriction=frictionLossKPa(mainQ,mainD,P.mainLen*ff,mat);
-    for(const ri of S.cw.risers){
-      const rr=calcRiser(ri,'cw');
-      const riserQ=rr.hwQ,riserD=rr.hwPipe;
-      const riFloors=ri.floorIds.map(fid=>S.cw.floors.find(f=>f.id===fid)).filter(Boolean);
-      for(let fi=0;fi<riFloors.length;fi++){
-        const fl=riFloors[fi];
-        const flR=calcFloor(fl,'cw');
-        const flQ=flR.hwQ,flD=flR.hwPipe;
-        if(!flQ)continue;
-        const elevFloors=isTop?(fi+1):(riFloors.length-fi);
-        const elevM=elevFloors*P.floorH;
-        const elevLoss=isTop?-elevLossKPa(elevM):elevLossKPa(elevM);
-        const riserFriction=frictionLossKPa(riserQ,riserD,elevM*ff,mat);
-        const branchFriction=frictionLossKPa(flQ,flD,P.branchLen*ff,mat);
-        const flZones=fl.zoneIds.map(zid=>S.zones.find(z=>z.id===zid)).filter(Boolean).filter(z=>!z.elecHW);
-        for(const z of flZones){
-          const zr=calcZone(z);
-          const zQ=zr.hwQ,zD=zr.hwPipe;
-          if(!zQ||!zD)continue;
-          const zoneFriction=frictionLossKPa(zQ,zD,zoneLen*ff,mat);
-          const totalLoss=mainFriction+riserFriction+branchFriction+zoneFriction+elevLoss;
-          hwPathsReal.push({
-            label:`${ri.name} → ${fl.name} → ${z.name}`,
-            segments:[
-              {name:'MAIN관(급탕)',Q:mainQ,D:mainD,L:P.mainLen,friction:mainFriction,elev:0},
-              {name:ri.name+' 수직',Q:riserQ,D:riserD,L:elevM,friction:riserFriction,elev:elevLoss},
-              {name:fl.name+' 분기',Q:flQ,D:flD,L:P.branchLen,friction:branchFriction,elev:0},
-              {name:z.name,Q:zQ,D:zD,L:zoneLen,friction:zoneFriction,elev:0}
-            ],
-            totalLoss,residual:(supplyKPaOrNull(P)==null?null:P.supplyKPa-totalLoss),
-        reqKPa:Math.max(zr.mKPa||0,P.minResidualKPa||0),
-        ok:(supplyKPaOrNull(P)==null?null:(P.supplyKPa-totalLoss)>=Math.max(zr.mKPa||0,P.minResidualKPa||0))
-          });
-        }
-      }
-    }
-    hwPathsReal.sort((a,b)=>a.residual-b.residual);
-  }
+  // 2026-10-19 — 급탕도 급수와 같은 경로 계산(같은 높이·수평길이 규칙)을 쓴다. 개별 전기온수기 화장실은 뺀다
+  //   (그 화장실의 급탕 압력은 온수기로 들어가는 그 층 급수 압력과 같다).
+  const hwPathsReal=S.cw.risers.length?calcAllPressurePaths('cw',true).filter(p=>p.segments.some(g=>g.Q>0)):[];
+  const elecOnly=S.zones.length&&S.zones.every(z=>z.elecHW);
   if(hwPathsReal.length){
-    h+=renderPressurePathResult(hwPathsReal,'cw',false);
+    h+=renderPressurePathResult(hwPathsReal,'cw',false)+velWarnBox(hwPathsReal);
   } else {
-    h+=`<div class="empty">급탕 배관이 없거나 (모든 화장실 개별전기온수기) 탭 ②에서 입상관 설정 필요</div>`;
+    h+=`<div class="empty">${elecOnly?'모든 화장실이 개별 전기온수기 — 급탕 압력은 각 층 급수 압력과 같으므로 별도 검토하지 않습니다':'급탕 배관이 없거나 탭 ②에서 입상관 설정 필요'}<br><small>화장실마다 전기온수기를 쓰면 화장실 설정의 「개별 전기온수기」를 체크하세요 — 그 화장실은 급탕 경로 검토에서 빠집니다</small></div>`;
   }
   h+=`</div></div></div>`;
   el.innerHTML=h;
 }
 
 function setPressure(key,val){S.pressure[key]=val;renderPressureTab();}
+// 2026-10-19 — 잔압이 충분해도 유속이 허용값을 넘는 구간을 알린다 (기준: WS-003 허용유속 S.cwVmax, 기본 1.5 m/s)
+function velWarnBox(paths){
+  const vmax=S.cwVmax||1.5, mat=S.pressure.material, seen={}, out=[];
+  for(const p of paths) for(const g of p.segments){
+    if(!(g.Q>0&&g.D>0)) continue;
+    const k=g.name.replace(/ \(수평 최원 기준\)/,'')+'|'+g.D; if(seen[k]) continue; seen[k]=1;
+    const d=innerDiaMm(g.D,mat)/1000, v=(g.Q/60000)/(Math.PI*d*d/4);
+    if(v>vmax) out.push({n:k.split('|')[0],D:g.D,Q:g.Q,v});
+  }
+  if(!out.length) return '';
+  out.sort((a,b)=>b.v-a.v);
+  return `<div style="margin-top:10px;padding:10px 12px;border:1.5px solid var(--red);border-radius:8px;background:rgba(220,38,38,.06);font-size:11.5px">
+    <div style="font-weight:700;color:var(--red);margin-bottom:4px">⚠ 유속 초과 구간 — 허용 ${vmax} m/s (잔압이 충분해도 소음·수격·마모 우려)</div>
+    ${out.map(o=>`<div>${esc(o.n)} · ${o.D}A · ${o.Q.toFixed(0)} L/min → <b>${o.v.toFixed(2)} m/s</b></div>`).join('')}
+    <div style="font-size:10px;color:var(--text3);margin-top:4px">관경 선정 방식(관균등표/유량표)과 별개로 확인한다. 한 단계 큰 관경으로 올리거나 계통을 나눈다</div></div>`;
+}
+// 부하계산서(hvac-calc) 부스터펌프 「수두 계산」 에 옮겨 넣을 값 (2026-10-19 사용자 요청)
+//   H1 — 경로 마찰손실 합(위치수두 제외)이 가장 큰 경로. 등가장 계수가 이미 들어 있으므로 hvac-calc 의
+//   「관경 앱 마찰손실 직접 입력」 칸에 넣는다(그 칸을 쓰면 H2 = 0). H3 — 경로 요구압 최댓값. H5 — 시작 층 → 최고 경로 층
+function hvacPumpBox(paths){
+  if(!paths||!paths.length) return '';
+  const fr=p=>p.segments.reduce((s,g)=>s+(g.friction||0),0);
+  const w=paths.reduce((a,p)=>fr(p)>fr(a)?p:a,paths[0]);
+  const fK=fr(w), fM=fK/9.81, h1=fM/1.5, mmaq=Math.round(h1*1000);
+  const req=Math.max(...paths.map(p=>p.reqKPa||0)), h3=req/9.81;
+  const elev=Math.max(...paths.map(p=>p.segments.reduce((s,g)=>s+Math.max(0,g.elev||0),0)))/9.81;
+  const ff=(S.pressure.fittingFactor==null?1.4:S.pressure.fittingFactor);
+  const R=(a,b,c)=>`<tr><td style="padding:4px 6px;border-bottom:1px solid var(--border)">${a}</td><td style="padding:4px 6px;border-bottom:1px solid var(--border);font-weight:700;color:var(--accent2);white-space:nowrap">${b}</td><td style="padding:4px 6px;border-bottom:1px solid var(--border);font-size:10px;color:var(--text3)">${c}</td></tr>`;
+  return `<div style="margin-top:12px;padding:12px;border:1.5px solid var(--accent);border-radius:8px;background:var(--surface2)">
+    <div style="font-size:12px;font-weight:700;margin-bottom:6px">부하계산서(hvac-calc) 부스터펌프 「수두 계산」 입력값</div>
+    <table style="width:100%;border-collapse:collapse;font-size:11.5px">
+      <tr style="color:var(--text2);font-size:10.5px"><th style="text-align:left;padding:3px 6px">hvac-calc 칸</th><th style="text-align:left;padding:3px 6px">넣을 값</th><th style="text-align:left;padding:3px 6px">근거</th></tr>
+      ${R('H1 관경 앱 마찰손실 (직접 입력 칸)',`${fM.toFixed(1)} m`,`마찰손실이 가장 큰 경로 「${esc(w.label)}」 ${fK.toFixed(1)} kPa (등가장 ×${ff.toFixed(2)} 포함, 위치수두 제외). 이 칸에 넣으면 H2 는 0 으로 바뀐다`)}
+      ${R('H3 NOZZLE',`${h3.toFixed(1)} m`,`경로 요구압 최댓값 ${req} kPa (세정밸브 100 · 샤워 70 · 일반 55)`)}
+      ${R('H4 PUMP HEAD LOSS','0','흡입측 손실을 모르면 비워 둔다')}
+      ${R('H5 STATIC HEAD',`${elev.toFixed(1)} m + 기구 높이`,`급수 시작 ${srcFloor()}층 → 최고 경로 층 바닥까지 (층 번호 × 층고 개략). 최고 기구 접속 높이(바닥 위 약 1 m)는 도면으로 더한다`)}
+    </table>
+    <div style="font-size:10px;color:var(--text3);margin-top:6px;line-height:1.5">hvac-calc 에서 양정이 정해지면 그 선정 양정 × 9.81 을 이 앱의 공급압력(kPa)으로 다시 넣어 한 번 더 확인한다.</div>
+  </div>`;
+}
 // 최원 경로 수평길이 — 입상관(r) 또는 메인 직결(m)
 function setHLen(kind,id,v){ const o=kind==='m'?S.cw.main:S.cw.risers.find(r=>r.id===id); if(!o)return; o.hLen=v>0?v:null; if(typeof persist==='function')persist(); renderPressureTab(); }
 
