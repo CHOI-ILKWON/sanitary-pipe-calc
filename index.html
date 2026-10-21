@@ -2938,7 +2938,7 @@ function solvePressureUpsize(type){
     if(!bad.length) break;
     bad.sort((a,b)=>(a.residual-a.reqKPa)-(b.residual-b.reqKPa));  // 가장 부족한 경로부터
     const p=bad[0], n=p.segments.length;
-    const order=p.segments.map((s,i)=>({i,f:s.friction})).sort((x,y)=>y.f-x.f);
+    const order=p.segments.map((s,i)=>({i,f:s.upstream?-1:s.friction})).filter(x=>x.f>=0).sort((x,y)=>y.f-x.f);   // PRV 상류 구간은 잔압에 영향 없음
     let bumped=false;
     for(const seg of order){
       const t=pathEntity(type,p.ids,seg.i,n);
@@ -3151,8 +3151,44 @@ function calcAllPressurePaths(type,hw){
       ok:(supplyKPaOrNull(P)==null?null:(P.supplyKPa-totalLoss)>=Math.max(zr.mKPa||0,P.minResidualKPa||0))
     });
   }
+  for(const p of paths) applyPrvZone(p,type);
   paths.sort((a,b)=>a.residual-b.residual);
   return paths;
+}
+
+// ── PRV 존 — 밸브 명세 7.3 prv 식·7.5 (2026-10-20 사용자 확정) ─────────────────
+//   잔압은 PRV 2차압에서 리셋한다: 잔압 = 2차압 − (PRV 하류 마찰 + PRV 하류 위치수두).
+//   입상관 시작 PRV(ri.prvKPa) = 분배헤더 직후(A안 존 PRV) → MAIN 구간이 상류.
+//   층 분기 PRV(fl.prvKPa) = 그 층 분기 직후(B안, 메인 직결 층이면 A안 저층 존) → MAIN·입상관 수직이 상류.
+//   PRV 는 1차압보다 높게 못 올린다 — 1차압 < 2차압이면 1차압으로 계산하고 「1차압 부족」 표시.
+//   유량 0 최대압(maxKPa) = 시작압(최대 공급압력 또는 PRV 2차압) − 하류 위치수두. 마찰은 빼지 않는다.
+//   ⚠ 2차 설정압 기본값은 정하지 않는다(밸브 앱 적정압 3.0 kgf/cm² 와의 관계 사용자 결정 대기) — 입력값만 쓴다.
+function prvKPaOf(o){ const v=o&&o.prvKPa; return (typeof v==='number'&&v>0)?v:null; }
+function applyPrvZone(p,type){
+  const ids=p.ids||{}, segs=p.segments, sup=supplyKPaOrNull(S.pressure);
+  const ri=ids.r?S[type].risers.find(r=>r.id===ids.r):null, fl=ids.f?S[type].floors.find(f=>f.id===ids.f):null;
+  const resets=[];
+  if(ri&&prvKPaOf(ri)!=null) resets.push({after:0,kPa:prvKPaOf(ri),where:ri.name+' 시작 (분배헤더 직후)'});
+  if(fl&&prvKPaOf(fl)!=null) resets.push({after:ri?1:0,kPa:prvKPaOf(fl),where:fl.name+' 분기 직후'});
+  const loss=(a,b)=>{ let t=0; for(let i=a;i<=b&&i<segs.length;i++) t+=segs[i].friction+segs[i].elev; return t; };
+  const elev=(a)=>{ let t=0; for(let i=a;i<segs.length;i++) t+=segs[i].elev; return t; };
+  const maxBase=S.maxPressureKPa||sup;
+  let start=sup, from=0, prv=null;
+  for(const r of resets){
+    const inlet=(start==null)?null:start-loss(from,r.after);
+    prv={...r,inlet,short:inlet!=null&&inlet<r.kPa};
+    start=(inlet!=null&&inlet<r.kPa)?inlet:r.kPa; from=r.after+1;
+  }
+  p.maxKPa=prv?prv.kPa-elev(from):(maxBase==null?null:maxBase-elev(0));
+  if(!prv) return p;
+  segs.forEach((g,i)=>{ if(i<from) g.upstream=true; });
+  p.prv=prv; p.startKPa=start; p.downLoss=loss(from,segs.length-1);
+  // 7.5-7 참고: 이 경로가 요구하는 최소 2차압 = 필요압 + PRV 하류 손실
+  p.prvNeedKPa=p.reqKPa+p.downLoss;
+  if(sup==null){ p.residual=null; p.ok=null; return p; }    // D15 — 공급압 미입력이면 판정 안 함
+  p.residual=start-p.downLoss;
+  p.ok=p.residual>=p.reqKPa;
+  return p;
 }
 
 function renderPressurePathResult(paths,type,isCW){
@@ -3168,6 +3204,15 @@ function renderPressurePathResult(paths,type,isCW){
   // 기준: AC-031 31.3.2.4 a) — 존 분할은 두 조건을 함께 본다
   const zs=zoneSplitCheck();
   const cond1=critical.ok, cond2=!zs.over;
+  // PRV 존 요약 — 존(설치 위치)별 2차압·필요 2차압·1차압 부족
+  const prvPaths=paths.filter(p=>p.prv);
+  let pz=null;
+  if(prvPaths.length){
+    const by={};
+    for(const p of prvPaths){ const k=p.prv.where, o=by[k]||(by[k]={where:k,kPa:p.prv.kPa,need:0,short:false}); o.need=Math.max(o.need,p.prvNeedKPa); o.short=o.short||p.prv.short; }
+    const mx=Math.max(...paths.map(p=>p.maxKPa==null?-Infinity:p.maxKPa));
+    pz={list:Object.values(by),max:mx,ok:mx<=MAX_FIXTURE_KPA};
+  }
   let h=`<div style="background:var(--surface2);border:1.5px solid ${(cond1&&cond2)?'var(--accent2)':'var(--red)'};border-radius:8px;padding:12px;margin-bottom:12px">
     <div style="font-size:10px;color:var(--text2);margin-bottom:6px">존 분할 판정 — 두 조건을 함께 본다 (AC-031 31.3.2.4)</div>
     <table style="width:100%;font-size:11px;border-collapse:collapse">
@@ -3177,7 +3222,12 @@ function renderPressurePathResult(paths,type,isCW){
       <tr><td style="padding:3px 5px">${cond2?'✓':'⚠'}</td>
         <td style="padding:3px 5px">최저층 최대압력 ≤ ${zs.limit} kPa</td>
         <td style="padding:3px 5px;text-align:right;font-weight:700;color:${cond2?'var(--accent2)':'var(--red)'}">${zs.lo.toFixed(0)} kPa</td></tr>
+      ${pz?`<tr><td style="padding:3px 5px">${pz.ok?'✓':'⚠'}</td>
+        <td style="padding:3px 5px">PRV 존 적용 후 기구 최대압력 (유량 0) ≤ ${zs.limit} kPa</td>
+        <td style="padding:3px 5px;text-align:right;font-weight:700;color:${pz.ok?'var(--accent2)':'var(--red)'}">${pz.max.toFixed(0)} kPa</td></tr>`:''}
     </table>
+    ${pz?`<div style="font-size:10px;color:var(--text2);margin-top:6px;line-height:1.6">PRV 존 (명세 7.5): ${pz.list.map(x=>`${esc(x.where)} 2차 ${x.kPa.toFixed(0)} kPa — 이 존 최소 필요 ${x.need.toFixed(0)} kPa (필요압+하류 손실)${x.short?' <b style="color:var(--red)">⚠ 1차압 부족</b>':''}`).join(' / ')}<br>
+      ⚠ 2차 설정압 기준은 사용자 결정 대기 — 밸브 앱 적정압 3.0 kgf/cm² (294 kPa) 와 존 필요압+마찰(위 값, 유량 0 에서 ≤ ${zs.limit} kPa)을 함께 확인하세요. 위 두 행(최상층 잔압·최저층 최대압)은 PRV 전 계통 기준입니다.</div>`:''}
     <div style="font-size:10px;color:${(cond1&&cond2)?'var(--text3)':'var(--red)'};margin-top:6px;line-height:1.6">
       ${(cond1&&cond2)
         ? '한 계통으로 갈 수 있습니다.'
@@ -3197,13 +3247,20 @@ function renderPressurePathResult(paths,type,isCW){
         <td style="padding:2px 5px;color:var(--accent)">공급압력</td><td></td><td></td><td></td>
         <td style="padding:2px 5px;text-align:right;color:var(--accent);font-weight:700">+${P.supplyKPa.toFixed(0)}</td>
       </tr>`;
-  let cum=P.supplyKPa;
+  let cum=P.supplyKPa, reset=false;
   for(const seg of critical.segments){
+    // PRV 존 — 상류 구간 다음에 2차압으로 리셋 (명세 7.3 prv 식)
+    if(critical.prv&&!seg.upstream&&!reset){
+      reset=true; cum=critical.startKPa;
+      h+=`<tr style="border-top:1px solid var(--border);background:rgba(224,168,92,0.10)">
+        <td style="padding:2px 5px;color:var(--warn);font-weight:700" colspan="4">PRV ${esc(critical.prv.where)} — 1차 ${critical.prv.inlet.toFixed(0)} → 2차 ${critical.prv.kPa.toFixed(0)} kPa 리셋${critical.prv.short?' <b style="color:var(--red)">⚠ 1차압 부족 — 1차압으로 계산</b>':''}</td>
+        <td style="padding:2px 5px;text-align:right;color:var(--warn);font-weight:700">${cum.toFixed(1)}</td></tr>`;
+    }
     cum-=seg.friction; cum-=seg.elev;
     const fCol=seg.friction>25?'var(--warn)':'var(--text)';
     const elvStr=seg.elev===0?'─':(seg.elev>0?`−${seg.elev.toFixed(1)}`:`+${Math.abs(seg.elev).toFixed(1)}`);
-    h+=`<tr style="border-top:1px solid var(--border)">
-      <td style="padding:2px 5px">${seg.name}</td>
+    h+=`<tr style="border-top:1px solid var(--border)${seg.upstream?';color:var(--text3)':''}">
+      <td style="padding:2px 5px">${seg.name}${seg.upstream?' <span style="font-size:9px">(PRV 상류)</span>':''}</td>
       <td style="padding:2px 5px;text-align:center;color:var(--accent2)">${seg.D?seg.D+'A':'─'}</td>
       <td style="padding:2px 5px;text-align:right;color:${fCol}">−${seg.friction.toFixed(1)}</td>
       <td style="padding:2px 5px;text-align:right">${elvStr}</td>
@@ -3230,7 +3287,7 @@ function renderPressurePathResult(paths,type,isCW){
     const minBar=Math.max(0,Math.min(100,(P.minResidualKPa/P.supplyKPa)*100));
     h+=`<div style="background:${pb};border:1px solid ${pc};border-radius:5px;padding:5px 8px">
       <div style="display:flex;justify-content:space-between;margin-bottom:3px">
-        <span style="font-size:10.5px">${p.label}</span>
+        <span style="font-size:10.5px">${p.label}${p.prv?` <span style="color:var(--warn);font-size:9.5px">[PRV ${p.prv.kPa.toFixed(0)} kPa${p.prv.short?' · 1차압 부족':''}]</span>`:''}${p.maxKPa!=null?` <span style="font-size:9.5px;color:${p.maxKPa>MAX_FIXTURE_KPA?'var(--red)':'var(--text3)'}">유량 0 최대 ${p.maxKPa.toFixed(0)} kPa${p.maxKPa>MAX_FIXTURE_KPA?' &gt; '+MAX_FIXTURE_KPA:''}</span>`:''}</span>
         <span style="font-size:11px;font-weight:700;color:${pc}">${p.residual.toFixed(0)} kPa ${kgfTxt(p.residual)} ${p.ok?'✓':'⚠'}</span>
       </div>
       <div style="position:relative;height:5px;background:var(--surface2);border-radius:3px">
@@ -3248,7 +3305,8 @@ function renderPressurePathResult(paths,type,isCW){
     <div class="section-title" style="color:var(--warn)">⚠ 업사이즈 권장</div>`;
     const seen=new Set();
     for(const p of failed){
-      const worst=p.segments.reduce((a,b)=>a.friction>b.friction?a:b);
+      const down=p.segments.filter(g=>!g.upstream);
+      const worst=down.reduce((a,b)=>a.friction>b.friction?a:b);
       const key=worst.name+'_'+worst.D;
       if(!seen.has(key)){
         seen.add(key);
@@ -3329,6 +3387,18 @@ function renderPressureTab(){
             onchange="${x.set}" style="width:70px;background:var(--surface);border:1px solid ${+x.o.hLen>0?'var(--border)':'var(--warn)'};color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px"></div>`).join('')
         ||'<div style="font-size:10px;color:var(--text3)">입상관을 만들면 여기에 나옵니다</div>'}
       ${(S.cw.risers.some(r=>!(+r.hLen>0)))?`<div style="font-size:9.5px;color:var(--warn);margin-top:4px">빈칸은 기본 ${(+P.branchLen||8)+(+P.zoneLen||3)} m 로 계산 중 — 도면 길이를 넣으세요</div>`:''}
+    </div>
+    <div style="margin-bottom:10px;padding:8px;background:var(--surface2);border:1px solid var(--warn);border-radius:6px">
+      <div style="font-size:10.5px;color:var(--text);font-weight:700;margin-bottom:2px">PRV 존 — 2차 설정압 (kPa)</div>
+      <div style="font-size:9.5px;color:var(--text3);margin-bottom:6px;line-height:1.5">비우면 PRV 없음. 입력하면 그 지점부터 잔압을 2차압에서 다시 계산합니다 (밸브 명세 7.3·7.5). <b>입상관</b> = 분배헤더 직후 존 PRV(A안), <b>층</b> = 그 층 분기 직후 PRV(B안 · 점검구 필수). 관경은 바꾸지 않습니다. ⚠ 2차압 기본값 미결정 — 밸브 앱 적정압 3.0 kgf/cm²(294 kPa) 참고</div>
+      ${[...S.cw.risers.map(r=>({o:r,name:r.name+' (입상관 시작)',set:`setPrvKPa('r','${r.id}',this.value)`})),
+         ...S.cw.floors.filter(f=>S.cw.risers.some(r=>r.floorIds.includes(f.id))||S.cw.main.floorIds.includes(f.id))
+           .map(f=>({o:f,name:f.name+' 분기',set:`setPrvKPa('f','${f.id}',this.value)`}))]
+        .map(x=>`<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+          <span style="flex:1;font-size:10.5px;color:var(--text2)">${esc(x.name)}</span>
+          <input type="number" value="${prvKPaOf(x.o)??''}" min="0" max="1000" step="5" placeholder="없음"
+            onchange="${x.set}" style="width:70px;background:var(--surface);border:1px solid ${prvKPaOf(x.o)!=null?'var(--warn)':'var(--border)'};color:var(--text);padding:4px 6px;border-radius:5px;font-size:12px"></div>`).join('')
+        ||'<div style="font-size:10px;color:var(--text3)">입상관을 만들면 여기에 나옵니다</div>'}
     </div>
     <div style="margin-bottom:6px"><div style="font-size:10.5px;color:var(--text2);margin-bottom:3px">최소 잔압 기준 (kPa)</div>
       ${inp('minResidualKPa',P.minResidualKPa,30,200,5,'모든 경로에 거는 하한값 (기본 55). 기구별 필요압(세정밸브 100·샤워 70·일반 55)은 경로마다 자동 적용되므로 높은 값을 넣을 필요 없음 — 올리면 일반 기구 경로까지 그 압력을 요구')}</div>
@@ -3427,6 +3497,7 @@ function hvacPumpBox(paths){
   </div>`;
 }
 // 최원 경로 수평길이 — 입상관(r) 또는 메인 직결(m)
+function setPrvKPa(kind,id,v){ const o=kind==='r'?S.cw.risers.find(r=>r.id===id):S.cw.floors.find(f=>f.id===id); if(!o)return; v=+v; o.prvKPa=(isFinite(v)&&v>0)?v:null; if(typeof persist==='function')persist(); renderPressureTab(); }
 function setHLen(kind,id,v){ const o=kind==='m'?S.cw.main:S.cw.risers.find(r=>r.id===id); if(!o)return; o.hLen=v>0?v:null; if(typeof persist==='function')persist(); renderPressureTab(); }
 
 
