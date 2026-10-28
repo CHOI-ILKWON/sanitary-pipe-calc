@@ -11,11 +11,13 @@
  *  trial    : 체험 발급 (계정 × 앱 조합당 1회)
  *  profile  : 회사·연차·유입경로 등 프로필 저장 + 체험 연장 1회
  *  purchase : 정식 이용 신청 접수 + 관리자 메일 알림
+ *  feedback : 무료 앱의 「의견 보내기」 접수 (로그인 없음) + 관리자 메일 알림
  *
  * ── 시트 ──
  *  라이선스   이메일 | 앱 | 유형 | 발급일 | 만료일 | 메모      ← 권한의 원본
  *  고객       이메일 | 이름 | 회사 | 연차 | 직무 | 이전불편 | 불편상세 | 유입경로 | 수신동의 | 연장적용 | 갱신일
  *  구매신청   신청일시 | 이메일 | 신청앱 | 금액 | 입금자명 | 세금계산서 | 메모 | 처리상태
+ *  의견       접수일시 | 앱 | 내용 | 연락처 | 화면 | 처리상태
  *
  *  만료일이 비어 있으면 무기한이다.
  *  입금을 확인하면 라이선스 시트에서 유형을 paid 로 바꾸고 만료일을 비우면 된다.
@@ -69,7 +71,8 @@ const SHEETS = {
   LICENSE: '라이선스',
   CUSTOMER: '고객',
   ORDER: '구매신청',
-  SUBSCRIBE: '구독'
+  SUBSCRIBE: '구독',
+  FEEDBACK: '의견'
 };
 
 const HEADERS = {
@@ -78,7 +81,9 @@ const HEADERS = {
   ORDER: ['신청일시', '이메일', '신청앱', '금액', '입금자명', '세금계산서', '메모', '처리상태'],
   // 무료 앱에서 "새 기능 알림 받기" 로 모이는 명단.
   // 로그인이 없으므로 라이선스와 섞지 않고 따로 쌓는다.
-  SUBSCRIBE: ['신청일시', '이메일', '앱', '유입경로', '수신동의', '메모']
+  SUBSCRIBE: ['신청일시', '이메일', '앱', '유입경로', '수신동의', '메모'],
+  // 무료 앱(덕트 계산서 등)의 「의견 보내기」. 로그인이 없으므로 연락처는 쓴 사람이 적은 그대로 받는다
+  FEEDBACK: ['접수일시', '앱', '내용', '연락처', '화면', '처리상태']
 };
 
 // 「고객」 시트의 열 위치(0부터). 열을 추가하거나 옮기면 여기만 고치면 된다.
@@ -124,12 +129,17 @@ function handle(p) {
 
     if (action === 'ping') {
       // version 은 배포가 실제로 갱신됐는지 밖에서 확인하는 용도다. 코드를 고치면 같이 올린다.
-      return json({ ok: true, version: '1.3', trialDays: CONFIG.TRIAL_DAYS, now: new Date().toISOString() });
+      return json({ ok: true, version: '1.4', trialDays: CONFIG.TRIAL_DAYS, now: new Date().toISOString() });
     }
 
     // 구독 신청은 로그인이 없다 — 무료 앱에서 이메일만 받는다.
     if (action === 'subscribe') {
       return json(subscribe_(p));
+    }
+
+    // 의견 보내기도 로그인이 없다 — 무료 앱에서 내용과 (적었다면) 연락처만 받는다.
+    if (action === 'feedback') {
+      return json(feedback_(p));
     }
 
     // 구버전 앱 호환 경로.
@@ -474,6 +484,37 @@ function subscribe_(p) {
   }
 }
 
+/**
+ * 무료 앱 「의견 보내기」.
+ * website 칸은 사람에게 보이지 않는 함정 칸이다 — 값이 있으면 자동 입력(스팸)으로 보고 조용히 버린다.
+ * 같은 내용이 1분 안에 다시 오면 한 번만 받는다 (버튼 두 번 누름).
+ */
+function feedback_(p) {
+  if (p.website) return { ok: true, message: '보내주셔서 감사합니다.' };
+  var msg = str_(p.message, 2000);
+  if (msg.length < 2) return { ok: false, error: 'empty', message: '내용을 적어 주세요.' };
+  var appId = normalizeAppId_(p.appId);
+  var contact = str_(p.contact, 120), page = str_(p.page, 300);
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sh = sheet_(SHEETS.FEEDBACK);
+    var last = sh.getLastRow();
+    if (last > 1) {
+      var prev = sh.getRange(last, 1, 1, 3).getValues()[0];
+      if (String(prev[2]) === msg && new Date() - new Date(prev[0]) < 60000) {
+        return { ok: true, message: '보내주셔서 감사합니다.' };
+      }
+    }
+    sh.appendRow([new Date(), appId, msg, contact, page, '접수']);
+  } finally {
+    lock.releaseLock();
+  }
+  notify_('[의견] ' + appId, msg + '\n\n연락처: ' + (contact || '(없음)') + '\n화면: ' + page);
+  return { ok: true, message: '보내주셔서 감사합니다. 읽고 반영하겠습니다.' };
+}
+
 // ═══════════════════════════════════════════════════════════
 //  시트 준비 / 기존 데이터 이관
 // ═══════════════════════════════════════════════════════════
@@ -499,6 +540,7 @@ function ensureSheets_() {
   ensureSheet_(ss, SHEETS.CUSTOMER, HEADERS.CUSTOMER);
   ensureSheet_(ss, SHEETS.ORDER, HEADERS.ORDER);
   ensureSheet_(ss, SHEETS.SUBSCRIBE, HEADERS.SUBSCRIBE);
+  ensureSheet_(ss, SHEETS.FEEDBACK, HEADERS.FEEDBACK);
 }
 
 function ensureSheet_(ss, name, headers) {
