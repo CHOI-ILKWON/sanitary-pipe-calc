@@ -217,27 +217,12 @@ const TOWER=`{ const R={id:'R1',name:'입상관 1',floorIds:[],zoneIds:[]};
     S.zones.push(z); const F={id:'F'+f,name:f+'층',zoneIds:[z.id]}; S.cw.floors.push(F); R.floorIds.push(F.id); }
   S.cw.risers.push(R); S.cw.main.riserIds.push('R1'); }`;
 
-test('06 보내는 상자 — 제목·[1.1 ②]·다섯 열·Q·H, H = Δz + 마찰 + 말단 필요압 (AC-030)', ()=>{
+test('CH-20261124-05 — 「옮겨 적을 값 → 용량계산서 부스터」 상자(Q·H) 삭제, 결과 화면에 기준 코드 없음', ()=>{
   const app=load();
-  const r=app.run(RESET+TOWER+`const H=pumpHead(), html=xferBox(), Q=calcMainType('cw').cwQ; return {H,html,Q}`);
-  assert.match(r.html,/▶ 옮겨 적을 값 — 용량계산서\(hvac-calc\) › 부스터펌프 탭/);
-  assert.match(r.html,/\[1\.1 ②\]/);
-  for(const c of ['번호','받는 칸 이름','값','단위','받는 위치','설계 유량 Q','양정 H','부스터펌프 › 설계 유량','부스터펌프 › 양정']) assert.ok(r.html.includes(c),c);
-  assert.equal(r.Q,280); assert.ok(r.html.includes('280'));
-  assert.ok(Math.abs(r.H.kPa-(r.H.dz+r.H.hf+r.H.hr))<1e-9);
-  assert.ok(Math.abs(r.H.dz-2*3*9.81)<1e-6);   // 1층 → 3층
-  assert.equal(r.H.hr,100);                      // 세정밸브
-  assert.ok(Math.abs(r.H.m-r.H.kPa/9.81)<1e-9);
-});
-
-test('06 보내는 상자 — 값이 없으면 「—」와 이유 (수도직결·고가수조·경로 없음)', ()=>{
-  const app=load();
-  const a=app.run(RESET+`S.supplyType='direct';`+TOWER+`return [pumpHead().why, xferBox()]`);
-  assert.match(a[0],/수도직결/); assert.ok(a[1].includes('—'));
-  const b=app.run(RESET+`S.supplyType='elevated'; S.mainLocation='top';`+TOWER+`return pumpHead().why`);
-  assert.match(b,/고가수조/);
-  const c=app.run(RESET+`return [pumpHead().why, xferBox()]`);
-  assert.match(c[0],/경로가 없습니다/); assert.match(c[1],/기구가 없어/);
+  const r=app.run(RESET+TOWER+`S.pressure.supplyKPa=360; renderPressureTab(); const p=document.getElementById('pressurePane').innerHTML;
+    renderResult(); const m=document.getElementById('resultPanel').innerHTML; return {p,m,f:typeof xferBox+typeof pumpHead}`);
+  assert.equal(r.f,'undefinedundefined');
+  for(const h of [r.p,r.m]){ assert.ok(!h.includes('옮겨 적을 값')); assert.ok(!/(AC|WS|DR|HW)-0\d\d/.test(h)); }
 });
 
 test('06 받는 칸 표시와 안내 탭 순서표 — ← 카탈로그(P_op/P_max), 이 앱 단계 ①·⑤ 굵게', ()=>{
@@ -246,7 +231,8 @@ test('06 받는 칸 표시와 안내 탭 순서표 — ← 카탈로그(P_op/P_m
     renderPressureTab(); const p=document.getElementById('pressurePane').innerHTML;
     renderHelp(); const h=document.getElementById('helpPanel').innerHTML; return {p,h}`);
   assert.ok(r.p.includes('← 카탈로그(P_op)')); assert.ok(r.p.includes('← 카탈로그(P_max)'));
-  assert.ok(r.p.includes('kgf/cm²')); assert.ok(r.p.includes('▶ 옮겨 적을 값'));
+  assert.ok(r.p.includes('kgf/cm²'));
+  assert.ok(r.h.includes('위생배관: 관경·압력검토')); assert.ok(!r.h.includes('Q 순간최대유량, H 필요 양정'));
   assert.ok(r.h.includes('1.1 저수조·급수펌프')); assert.ok(r.h.includes('1.2 덕트 정압'));
   assert.equal((r.h.match(/font-weight:700;background:rgba\(59,130,246,\.10\)/g)||[]).length,2);
 });

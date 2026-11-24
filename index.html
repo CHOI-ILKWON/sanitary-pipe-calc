@@ -1208,7 +1208,7 @@ function renderPipeNode(id, n, p, zoneId, r){
       <span style="font-size:10px;color:var(--text2)">개</span>
     </div>
     <div class="pipe-qty-row" style="margin-top:3px">
-      <label style="display:flex;align-items:center;gap:3px;font-size:9.5px;color:${n.cont?'var(--warn)':'var(--text2)'};cursor:pointer" title="운전 중 계속 열려 있는 기구. 동시사용계수에서 빼고 유량을 그대로 더한다 (WS-002 3.7)">
+      <label style="display:flex;align-items:center;gap:3px;font-size:9.5px;color:${n.cont?'var(--warn)':'var(--text2)'};cursor:pointer" title="운전 중 계속 열려 있는 기구. 동시사용계수에서 빼고 유량을 그대로 더한다">
         <input type="checkbox" ${n.cont?'checked':''} onchange="setPipeCont('${zoneId}','${id}',this.checked)"> 연속사용
       </label>
       ${n.cont?`<input class="pipe-qty-inp" style="width:34px" type="number" min="1" max="${n.qty||1}" value="${n.contQty||n.qty||1}"
@@ -1829,7 +1829,6 @@ function renderResult(){
     <div class="chip"><span class="chip-lbl">오수 통기&nbsp;</span><span class="chip-val" style="color:var(--red)">${ps(dm.sewVent||0)}</span><span class="chip-lbl">&nbsp;개략</span></div>
     <div class="chip"><span class="chip-lbl">배수 통기&nbsp;</span><span class="chip-val" style="color:var(--drain)">${ps(dm.wstVent||0)}</span><span class="chip-lbl">&nbsp;개략</span></div>
   </div>
-  ${xferBox()}
   <div style="font-size:10.5px;color:var(--text2);margin-bottom:12px">
     ${cwSizeMode()==='wsfu'?`급수 WSFU ${cm.wsCwR} → ${cm.cwQw.toFixed(0)} L/min${(cm.fvAll||0)>0?' (세정밸브형 열)':' (세정탱크형 열)'} · 급탕 WSFU ${cm.wsHwR} → ${cm.hwQw.toFixed(0)} L/min ·
       ${cm.wsOver?'<span style="color:var(--red)">⚠ WSFU 10,000 초과 — 표 10 끝값을 썼습니다 ·</span> ':''}${wsfuBasisText()}<br>
@@ -1842,7 +1841,7 @@ function renderResult(){
       ((cm.cwE||0)>=EQ_FRICTION_LIMIT?` <span style="color:var(--warn)">(환산 ${EQ_FRICTION_LIMIT} 이상 — 압력검토 탭에서 마찰손실 확인 권장)</span>`:'')} ·
     계수표 출처: 공조위생 기술데이터북(한미) — 화장실·층·입상관·MAIN 각 단계에서 그 구간 담당 기구수로 적용 · 비교: WSFU 방식 급수 ${ps(cm.cwPipeW)} · 급탕 ${ps(cm.hwPipeW)}<br>`}
     <span style="color:var(--warn)">통기관경은 개략값입니다 — KDS 표 4.3-1 검증 필요</span>.
-    신정통기관·통기수직관은 담당 배수수직관경·총 DFU·전개길이 세 값으로 정해야 하는데 원표를 확보하지 못했습니다 (DR-004).
+    신정통기관·통기수직관은 담당 배수수직관경·총 DFU·전개길이 세 값으로 정해야 하는데 원표를 확보하지 못했습니다.
     각개·지관·루프·도피통기관은 담당 배수관경의 1/2 이상·최소 32A 로 산정하며 전개길이 12m 이상이면 한 단계 확대합니다.
     집수정 통기관(표 4.3-2)은 이 앱에서 다루지 않습니다 ·
     배수관경은 KDS 31 30 25 : 2026 — DFU 표 4.1-2 「${(BLDG_USES.find(x=>x[0]===S.bldgUse)||BLDG_USES[0])[1]}」 열 / 횡주관 표 4.1-5(수평지관) / 입상관 표 4.1-5(수직관: 합계 + 1개 분기층당) /
@@ -2205,11 +2204,11 @@ function renderHelp(){
       <tr style="color:var(--text2)">${['단계','하는 곳','하는 일','다음 단계로 옮길 값'].map(x=>`<th style="text-align:left;padding:4px 6px;border-bottom:1px solid var(--border)">${x}</th>`).join('')}</tr>
       ${rows.map(r=>{const b=mine.includes(r[0]+'|'+r[1]);return `<tr style="${b?'font-weight:700;background:rgba(59,130,246,.10)':''}">${r.map(c=>`<td style="padding:4px 6px;border-bottom:1px solid var(--border);vertical-align:top">${c}</td>`).join('')}</tr>`;}).join('')}</table>`;
     h+=`<div class="section"><div class="section-title">앱 간 값 옮기기 순서 — 네 앱 공통</div>
-      <div style="font-size:11.5px;color:var(--text2);line-height:1.7;margin-bottom:6px">앱끼리 값을 자동으로 연결하지 않습니다. 각 앱의 <b>「▶ 옮겨 적을 값」</b> 상자(연한 파랑)가 어느 값을 어느 앱의 어느 칸에 몇 번째로 옮길지 보여 주고, 옮겨 적는 것은 사용자가 합니다. 받는 칸 옆에는 「← 출처」가 회색으로 적혀 있습니다. 굵게 표시한 줄이 이 앱(위생배관)이 맡는 단계입니다.</div>
+      <div style="font-size:11.5px;color:var(--text2);line-height:1.7;margin-bottom:6px"><b>2026-11-24 변경:</b> 부스터 유량 Q·양정 H 는 용량부하 앱이 직접 산정합니다. 위생배관은 ⑤ 압력검토(공급압 = 카탈로그 P_op)만 합니다.<br>앱끼리 값을 자동으로 연결하지 않습니다. 보내는 앱의 <b>「▶ 옮겨 적을 값」</b> 상자(연한 파랑)가 어느 값을 어느 앱의 어느 칸에 몇 번째로 옮길지 보여 주고, 옮겨 적는 것은 사용자가 합니다. 받는 칸 옆에는 「← 출처」가 회색으로 적혀 있습니다. 굵게 표시한 줄이 이 앱(위생배관)이 맡는 단계입니다.</div>
       <div style="font-size:12px;font-weight:700;margin-top:4px">1.1 저수조·급수펌프 (급수 계통)</div>
       ${T([
-        ['①','위생배관','기구를 입력해 순간최대유량과 필요 양정을 계산한다','Q 순간최대유량, H 필요 양정'],
-        ['②','용량부하 — 부스터펌프 탭','Q·H를 받아 펌프 대수·동력을 정한다','펌프 구성, Q, H'],
+        ['①','위생배관','기구를 입력해 관경을 정하고 압력검토를 한다','위생배관: 관경·압력검토 (용량부하로 옮기는 값 없음)'],
+        ['②','용량부하 — 부스터펌프 탭','부스터 유량 Q·양정 H 를 직접 산정하고 펌프 대수·동력을 정한다','펌프 구성, Q, H'],
         ['②','용량부하 — 물탱크 탭','수조 용량을 계산한다(AC-032)','수조 유효용량, 칸 수'],
         ['③','제조사 카탈로그 (사용자)','선정한 펌프 곡선에서 두 값을 읽는다: 설계 유량 운전점의 토출압 P_op, 유량 0 정지양정(최대압) P_max','P_op, P_max'],
         ['④','밸브','수조·펌프·압력을 넣고 밸브 세트, PRV 존, 계통도를 만든다','—'],
@@ -2275,7 +2274,7 @@ function hwGroupCard(zone){
     <div style="margin-top:3px;color:var(--text3);font-size:10.5px">
       합산 급탕 유량 ${g.hwQ.toFixed(1)} L/min (동시사용 ${((g.hwSimultF||1)*100).toFixed(1)}%) ·
       환탕관은 <span style="color:var(--warn)">개략값</span> — 급탕관 −${S.hwReturnStep??1}단계(관행, 최소 20A).
-      실시설계에서는 배관 열손실 ÷ (물의 비열 × 허용온도강하 5℃) 로 순환유량을 내어 확정합니다 (HW-001)
+      실시설계에서는 배관 열손실 ÷ (물의 비열 × 허용온도강하 5℃) 로 순환유량을 내어 확정합니다 (KDS 31 30 20 4.1.2)
     </div>`, 'var(--accent)');
 }
 
@@ -3447,7 +3446,7 @@ function renderPressurePathResult(paths,type,isCW){
     pz={list:Object.values(by),max:mx,ok:mx<MAX_FIXTURE_KPA};
   }
   let h=`<div style="background:var(--surface2);border:1.5px solid ${(cond1&&cond2)?'var(--accent2)':'var(--red)'};border-radius:8px;padding:12px;margin-bottom:12px">
-    <div style="font-size:10px;color:var(--text2);margin-bottom:6px">존 분할 판정 — 두 조건을 함께 본다 (AC-031 31.3.2.4)</div>
+    <div style="font-size:10px;color:var(--text2);margin-bottom:6px">존 분할 판정 — 두 조건을 함께 본다</div>
     <table style="width:100%;font-size:11px;border-collapse:collapse">
       <tr><td style="padding:3px 5px;width:20px">${cond1?'✓':'⚠'}</td>
         <td style="padding:3px 5px">최상층 잔압 ≥ 기구 최소 필요압력</td>
@@ -3594,7 +3593,7 @@ function renderPressureTab(){
       <input type="number" value="${S.maxPressureKPa||''}" min="0" max="2000" step="10" placeholder="미입력"
         onchange="S.maxPressureKPa=+this.value||0;renderAll()"
         style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:6px;font-size:12px;box-sizing:border-box">
-      <div style="font-size:10px;color:var(--text3);margin-top:2px">${S.maxPressureKPa?kgfTxt(S.maxPressureKPa)+' · ':''}${S.supplyType==='elevated'?'수조 저수위 기준. 비우면 공급압력으로 봅니다':'펌프 정지양정(유량 0) 기준 [1.1 ③ → ⑤]. 정격 운전점이 아닙니다 — AC-031 31.3.2.4 b)'}</div></div>
+      <div style="font-size:10px;color:var(--text3);margin-top:2px">${S.maxPressureKPa?kgfTxt(S.maxPressureKPa)+' · ':''}${S.supplyType==='elevated'?'수조 저수위 기준. 비우면 공급압력으로 봅니다':'펌프 정지양정(유량 0) 기준 [1.1 ③ → ⑤]. 정격 운전점이 아닙니다'}</div></div>
     <div style="margin-bottom:10px"><div style="font-size:10.5px;color:var(--text2);margin-bottom:3px">층고 (m)</div>
       ${inp('floorH',P.floorH,2,10,0.1)}</div>
     <div style="margin-bottom:10px"><div style="font-size:10.5px;color:var(--text2);margin-bottom:3px">급수 시작 위치 층 (펌프·수조)</div>
@@ -3680,7 +3679,6 @@ function renderPressureTab(){
   <div style="flex:1;overflow-y:auto;padding:16px">`;
 
   // CW results
-  h+=xferBox();
   h+=`<div class="section" style="margin-bottom:20px">
     <div class="section-title">급수 압력검토</div>`;
   if(S.cw.risers.length){
@@ -3708,51 +3706,8 @@ function renderPressureTab(){
 }
 
 function setPressure(key,val){S.pressure[key]=val;renderAll();}   // WSFU 방식은 압력 입력이 허용마찰로 관경에 들어가므로 저장·전체 갱신
-// ── 앱 간 값 옮기기 — 보내는 상자 (CH-20261123-06, 00_현행기준/앱간_값옮기기_표기기준.md 2.1) ──────────
-//   앱끼리 자동 연결하지 않는다. 어느 값을 어느 앱의 어느 칸에 몇 번째로 옮길지 보여 주고, 옮겨 적는 것은 사용자가 한다.
-//   이 앱은 1.1 ① 단계: 설계 유량 Q(순간최대유량)와 양정 H 를 용량계산서(hvac-calc) 부스터펌프 탭(1.1 ②)으로 보낸다.
-//   색·열 순서는 네 앱 공통: 연한 파랑 바탕 + 파랑 테두리, [번호, 받는 칸 이름, 값, 단위, 받는 위치].
-const XFER_BG='rgba(59,130,246,.10)', XFER_BD='#3b82f6';
-// 양정 H — AC-030 4.1: 실양정 Δz + 마찰손실(직관 × 등가장 계수, 국부손실 포함) + 말단 필요압 H_r, 가장 불리한 경로.
-//   압력검토 경로(calcAllPressurePaths)의 위치수두·마찰·필요압을 그대로 쓴다. 공급압 입력과 무관하다.
-//   넣지 않은 것: 흡입측 손실, 기구 접속 높이(바닥 위), 양정 여유율(AC-030 10% 이내) — 용량계산서에서 정한다.
-function pumpHead(){
-  if(S.supplyType==='direct')   return {why:'수도직결식 — 펌프가 없습니다'};
-  if(S.supplyType==='elevated') return {why:'고가수조식 — 양수펌프 양정은 이 앱에서 계산하지 않습니다'};
-  let paths=[]; try{ paths=calcAllPressurePaths('cw'); }catch(e){ paths=[]; }
-  if(!paths.length) return {why:'압력검토 경로가 없습니다 — ② 탭에서 층·입상관을 구성하세요'};
-  let w=null;
-  for(const p of paths){
-    const dz=p.segments.reduce((t,g)=>t+(g.elev||0),0), hf=p.segments.reduce((t,g)=>t+(g.friction||0),0), hr=Math.max(p.reqKPa||0,S.pressure.minResidualKPa||0);
-    const tot=dz+hf+hr;
-    if(!w||tot>w.kPa) w={kPa:tot,dz,hf,hr,label:p.label};
-  }
-  return Object.assign(w,{m:w.kPa/9.81});
-}
-function xferBox(){
-  const cm=calcMainType('cw'), Q=cm.cwQ||0, H=pumpHead();
-  const td='padding:4px 8px;border-bottom:1px solid rgba(59,130,246,.25)';
-  const row=(n,name,val,unit,where)=>`<tr><td style="${td};text-align:center">${n}</td><td style="${td}">${name}</td><td style="${td};font-weight:700;white-space:nowrap">${val}</td><td style="${td}">${unit}</td><td style="${td};color:var(--text2)">${where}</td></tr>`;
-  const qVal=Q>0?`${Q.toFixed(0)} <span style="font-weight:400;color:var(--text3)">(${(Q*0.06).toFixed(1)} ㎥/h)</span>`:'—';
-  const hVal=H.m!=null?`${H.m.toFixed(1)} <span style="font-weight:400;color:var(--text3)">(${H.kPa.toFixed(0)} kPa)</span>`:'—';
-  const notes=[];
-  if(!(Q>0)) notes.push('설계 유량 Q: 기구가 없어 아직 계산되지 않았습니다.');
-  if(H.m==null) notes.push('양정 H: '+H.why+'.');
-  else notes.push(`양정 H = 실양정 Δz ${(H.dz/9.81).toFixed(1)} m + 마찰손실 ${(H.hf/9.81).toFixed(1)} m (등가장 ×${(S.pressure.fittingFactor??1.4).toFixed(2)} 포함) + 말단 필요압 ${(H.hr/9.81).toFixed(1)} m (${H.hr} kPa) = <b>${H.m.toFixed(1)} m</b> (${H.kPa.toFixed(0)} kPa ${kgfTxt(H.kPa)}) — AC-030 4.1, 가장 불리한 경로 「${esc(H.label)}」. 흡입측 손실·기구 접속 높이·여유율은 넣지 않았습니다(용량계산서에서 정함).`);
-  notes.push(`설계 유량 Q = 급수 MAIN 순간최대유량 (${cwSizeMode()==='wsfu'?'WSFU '+cm.wsCwR+' → 매뉴얼 표 10':'선택한 산정 방식'}).`);
-  return `<div class="xfer-box" style="margin:12px 0;padding:10px 12px;border:1.5px solid ${XFER_BD};border-radius:8px;background:${XFER_BG}">
-    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px">
-      <div style="font-size:12.5px;font-weight:700">▶ 옮겨 적을 값 — 용량계산서(hvac-calc) › 부스터펌프 탭</div>
-      <div style="font-size:11px;font-weight:700;color:${XFER_BD}">[1.1 ②]</div></div>
-    <table style="width:100%;border-collapse:collapse;font-size:11.5px">
-      <tr style="font-size:10.5px;color:var(--text2)"><th style="${td};width:38px">번호</th><th style="${td};text-align:left">받는 칸 이름</th><th style="${td};text-align:left">값</th><th style="${td};text-align:left">단위</th><th style="${td};text-align:left">받는 위치</th></tr>
-      ${row('①','설계 유량 Q',qVal,'L/min','부스터펌프 › 설계 유량')}
-      ${row('②','양정 H',hVal,'m','부스터펌프 › 양정')}
-    </table>
-    <div style="font-size:10px;color:var(--text3);margin-top:6px;line-height:1.6">${notes.join('<br>')}<br>
-      다음 순서: 용량계산서에서 펌프를 정하고 [1.1 ②] → 카탈로그에서 토출압 P_op·최대압 P_max 를 읽어 [1.1 ③] → 이 앱 ⑤ 압력검토의 공급압·최대압에 넣어 다시 확인합니다 [1.1 ⑤].</div>
-  </div>`;
-}
+// CH-20261124-05 — 부스터 유량·양정은 용량부하 앱이 직접 산정한다. 「옮겨 적을 값 → 용량계산서 부스터」 상자(Q·H)는 삭제했다.
+//   이 앱은 1.1 ⑤ 압력검토만 한다 (공급압 ← 카탈로그 P_op, 최대압 ← 카탈로그 P_max).
 // 최원 경로 수평길이 — 입상관(r) 또는 메인 직결(m)
 function setPrvKPa(kind,id,v){ const o=kind==='r'?S.cw.risers.find(r=>r.id===id):S.cw.floors.find(f=>f.id===id); if(!o)return; v=+v; o.prvKPa=(isFinite(v)&&v>0)?v:null; if(typeof persist==='function')persist(); renderPressureTab(); }
 function setHLen(kind,id,v){ const o=kind==='m'?S.cw.main:S.cw.risers.find(r=>r.id===id); if(!o)return; o.hLen=v>0?v:null; if(typeof persist==='function')persist(); renderPressureTab(); }
