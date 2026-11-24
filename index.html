@@ -437,7 +437,21 @@ function velocityMat(q_Lmin,d,mat){
 //   L = MAIN 길이 + 수직 높이, l = 수평 최원 길이 (입상관별 hLen, 없으면 층당+존 기본값), K = 관로계수.
 //   층 번호를 못 읽으면 가장 불리한 층(상향식 최상층, 하향식 수조 바로 아래층)으로 본다.
 //   반환 {s, reason} — s=null 이면 마찰 조건 없이 유속만 본다 (reason: 'noSupply' | 'noZone' | 'short').
+//   모든 화장실을 훑는 계산이라 관경마다 다시 하면 화장실 수의 제곱으로 느려진다 (40개소 약 2.6초, 2026-11-25).
+//   afScoped() 로 감싼 계산·화면 함수가 도는 동안만 한 번 구해 쓰고, 가장 바깥 함수가 끝나면 버린다.
+//   감싸는 함수는 S 의 입력(화장실·층·압력)을 바꾸지 않는 것이어야 한다 — 그래야 낡은 값이 남지 않는다.
+let _afDepth=0, _afMemo=null;
+function afScoped(fn){
+  return function(...args){
+    if(_afDepth++===0) _afMemo=null;
+    try{ return fn.apply(this,args); }finally{ if(--_afDepth===0) _afMemo=null; }
+  };
+}
 function allowFriction(){
+  if(_afDepth>0) return _afMemo||(_afMemo=allowFrictionCalc());
+  return allowFrictionCalc();
+}
+function allowFrictionCalc(){
   if(typeof S==='undefined'||!S.pressure) return {s:null,reason:'noSupply'};
   const P=S.pressure, sup=supplyKPaOrNull(P);
   if(sup==null) return {s:null,reason:'noSupply'};
@@ -971,6 +985,9 @@ function newZone(name,floor=''){
   };
 }
 
+// 관경 산정 규칙 판 — 이 값이 아닌 저장본은 한 번 변환한다. b: 첫 배포본(2026-11-24)이 옛 저장본을 변환하지 못해
+//   관균등표로 남은 저장본까지 다시 변환하려고 올렸다 (2026-11-25).
+const SIZE_RULE='CH-20261123-02b';
 const S={
   projectName:'새 프로젝트',
   zones:[],
@@ -983,7 +1000,7 @@ const S={
                          // 'bottom'|'top'
   cwSimultMode:'curve',  // 관균등표·유량 구간표의 동시사용계수표. 「고정 0.85(legacy)」는 근거가 없어 삭제 (CH-20261123-02 보완)
   cwSizeMode:'wsfu',     // 급수·급탕 관경 선정 — 'wsfu'(기구급수부하단위·고시/KDS, 기본)|'equiv'(관균등표, 사내 관행 비교)|'flow'(유량 구간표). 기준: CH-20261123-02 U1
-  sizeRule:'CH-20261123-02',   // 이 값이 없는 옛 저장본은 normalizeState() 가 관균등표 → WSFU 로 바꾸고 알린다
+  sizeRule:SIZE_RULE,   // 이 값이 없는 옛 저장본은 normalizeState() 가 관균등표 → WSFU 로 바꾸고 알린다
   bldgUse:'general',     // 건물 용도 — DFU(KDS 표 4.1-2)·WSFU(매뉴얼 표 9) 열. 기준: CH-20261123-02 2-4
   drSlope:1,             // 건물배수 수평주관 구배 — DR_SLOPES 인덱스 (1 = 1/100)
   cwVmax:1.5,            // 급수·급탕 허용유속 상한 m/s (기준: WS-003)
@@ -1022,7 +1039,14 @@ const LS_KEY='sanitaryPipeState_v1';
 function persist(){try{localStorage.setItem(LS_KEY,JSON.stringify(S));}catch{}}
 // 상태 보정: 구버전 마이그레이션 + 누락 키 기본값 (loadJSON·localStorage 복원 공용)
 let LOAD_WARN=[];   // 불러올 때 사용자에게 알릴 변환 내역 (normalizeState 가 채운다)
-function showLoadWarn(){ if(LOAD_WARN.length){ const t=LOAD_WARN.splice(0); alert('저장본을 현행 기준으로 변환했습니다.\n\n· '+t.join('\n· ')); } }
+function showLoadWarn(){ if(LOAD_WARN.length){ const t=LOAD_WARN.splice(0); persist(); alert('저장본을 현행 기준으로 변환했습니다.\n\n· '+t.join('\n· ')); } }
+// 저장본을 S 에 싣는다. 나중에 생긴 키가 저장본에 없으면 S 의 새 기본값(또는 지금 프로젝트 값)이 남아
+//   옛 저장본을 새 저장본으로 잘못 보므로, 그 키는 먼저 비우고 normalizeState() 가 정하게 한다.
+function applySaved(d){
+  for(const k of ['sizeRule','cwSizeMode','bldgUse']) if(!(k in d)) S[k]=undefined;
+  Object.assign(S,d);
+  normalizeState();
+}
 function normalizeState(){
   for(const t of['cw','dr']){
     if(!S[t])S[t]={floors:[],risers:[],main:{riserIds:[],floorIds:[],zoneIds:[]}};
@@ -1039,12 +1063,12 @@ function normalizeState(){
   // 기준: CH-20261123-02 U1 — 기본 산정법이 관균등표 → 기구급수부하단위(고시 별표 8 2.4)로 바뀌었다.
   //   옛 저장본이 관균등표(종전 기본)였으면 새 기본으로 바꾸고 알린다. 관균등표 결과는 비교 열에 계속 보인다.
   //   유량 구간표를 일부러 고른 저장본은 그대로 둔다.
-  if(S.sizeRule!=='CH-20261123-02'){
+  if(S.sizeRule!==SIZE_RULE){
     if(S.cwSizeMode!=='flow'){
-      if(S.zones.length) LOAD_WARN.push('급수·급탕 관경 산정법이 바뀌었습니다 (2026-11-23): 관균등표 → 기구급수부하단위·순간최대유량·유속·허용마찰 (기계설비 기술기준 별표 8 2.4). 종전 관균등표 결과는 「비교」로 함께 표시됩니다.');
+      if(S.zones.length&&S.cwSizeMode!=='wsfu') LOAD_WARN.push('급수·급탕 관경 산정법이 바뀌었습니다 (2026-11-23): 관균등표 → 기구급수부하단위·순간최대유량·유속·허용마찰 (기계설비 기술기준 별표 8 2.4). 종전 관균등표 결과는 「비교」로 함께 표시됩니다.');
       S.cwSizeMode='wsfu';
     }
-    S.sizeRule='CH-20261123-02';
+    S.sizeRule=SIZE_RULE;
   }
   if(!S.cwSizeMode) S.cwSizeMode='wsfu';
   if(!BLDG_USES.some(x=>x[0]===S.bldgUse)) S.bldgUse='general';
@@ -3062,8 +3086,7 @@ function loadJSON(e){
     try{
       const d=JSON.parse(ev.target.result);
       delete d.results;   // 저장된 계산 결과는 쓰지 않고 다시 계산한다 (D18)
-      Object.assign(S,d);
-      normalizeState();
+      applySaved(d);
       document.getElementById('projectName').value=S.projectName||'';
       activeZone=S.zones[0]?.id||null;
       renderAll();
@@ -3093,6 +3116,13 @@ function showModal(ph,title,cb){
 function confirmModal(){const v=document.getElementById('minp')?.value||'';const cb=window._mcb;closeModal();if(cb)cb(v);}
 function closeModal(){document.getElementById('modalOverlay').style.display='none';window._mcb=null;}
 
+// 허용마찰 재사용 범위 (afScoped) — 입력을 바꾸지 않는 계산·화면 함수만. 초기 렌더보다 먼저 감싼다
+calcZone=afScoped(calcZone); calcMainType=afScoped(calcMainType); calcAllPressurePaths=afScoped(calcAllPressurePaths);
+renderTab=afScoped(renderTab); renderResult=afScoped(renderResult); renderPressureTab=afScoped(renderPressureTab);
+renderSidebar=afScoped(renderSidebar); renderEditor=afScoped(renderEditor); exportCSV=afScoped(exportCSV);
+calcFloor=afScoped(calcFloor); calcRiser=afScoped(calcRiser); calcBoiler=afScoped(calcBoiler);
+exportResults=afScoped(exportResults); _printPDF=afScoped(_printPDF);
+
 // ── Init ───────────────────────────────────────────────────────────────────────
 document.getElementById('projectName').addEventListener('change',function(){S.projectName=this.value;persist();});
 let hadSaved=false;
@@ -3102,8 +3132,7 @@ try{
     const d=JSON.parse(saved);
     if(d&&d.zones){
       delete d.results;   // 저장된 계산 결과는 쓰지 않고 다시 계산한다 (D18)
-      Object.assign(S,d);
-      normalizeState();
+      applySaved(d);
       activeZone=S.zones[0]?.id||null;
       hadSaved=S.zones.length>0;
     }

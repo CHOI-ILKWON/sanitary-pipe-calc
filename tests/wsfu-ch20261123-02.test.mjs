@@ -10,13 +10,13 @@ import vm from 'node:vm';
 const html=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
 const src=[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m=>m[1]).find(t=>t.includes('const FX_KEYS'));
 
-function load(){
+function load(saved=null){
   const el=()=>({innerHTML:'',value:'',style:{},click(){},addEventListener(){},classList:{toggle(){},add(){},remove(){}},
     querySelectorAll:()=>[],appendChild(){},setAttribute(){}});
   const els={}, alerts=[];
   const ctx={console,Math,JSON,Date,setTimeout(){},clearTimeout(){},alert(m){alerts.push(m);},confirm:()=>true,
     URL:{createObjectURL(){return ''},revokeObjectURL(){}},Blob:function(){},
-    localStorage:{getItem(){return null},setItem(){},removeItem(){}},
+    localStorage:{getItem(){return saved},setItem(){},removeItem(){}},
     document:{getElementById:id=>els[id]||(els[id]=el()),querySelectorAll:()=>[],querySelector:()=>null,createElement:el,addEventListener(){},body:el()},
     navigator:{userAgent:''},location:{search:'',hash:''}};
   ctx.window=ctx; ctx.window.addEventListener=()=>{};
@@ -186,14 +186,28 @@ test('2-3 FD(상시배수) 삭제 — 옛 저장본은 FD(비상용)으로 바�
   assert.ok(r.w.some(x=>/FD\(상시배수/.test(x)&&/3개/.test(x)));
 });
 
-test('U1 저장본 변환 — sizeRule 없는 관균등표 저장본은 WSFU 로, 유량 구간표는 그대로', ()=>{
-  const app=load();
-  const r=app.run(RESET+ZONE('A','1층',[['wc_v',1]])+`
-    delete S.sizeRule; S.cwSizeMode='equiv'; normalizeState(); const a=[S.cwSizeMode,LOAD_WARN.length]; LOAD_WARN.length=0;
-    delete S.sizeRule; S.cwSizeMode='flow'; normalizeState(); const b=[S.cwSizeMode,LOAD_WARN.length]; LOAD_WARN.length=0;
-    S.cwSizeMode='equiv'; normalizeState(); const c=S.cwSizeMode;   // 이미 새 규칙 저장본에서 사용자가 고른 관균등표는 유지
-    return {a,b,c,k:S.pressure.kPipe}`);
-  assert.deepEqual(r.a,['wsfu',1]); assert.deepEqual(r.b,['flow',0]); assert.equal(r.c,'equiv'); assert.equal(r.k,3);
+// 실제 불러오기 경로로 본다 — 종전 시험은 S.sizeRule 을 지우고 normalizeState() 만 불러 오류를 놓쳤다 (2026-11-25)
+const SAVED=extra=>{ const app=load(); const s=app.run(RESET+ZONE('A','1층',[['wc_v',2]])+`const d=JSON.parse(JSON.stringify(S)); delete d.sizeRule; delete d.bldgUse; delete d.cwSizeMode; return d;`); return Object.assign(s,extra); };
+const viaStorage=d=>{ const app=load(JSON.stringify(d)); return {app, ...app.run(`showLoadWarn(); return {mode:S.cwSizeMode,rule:S.sizeRule===SIZE_RULE,use:S.bldgUse}`), warn:app.alerts.join('\n')}; };
+const viaFile=(d,before='')=>{ const app=load(); return {app, ...app.run(RESET+before+`
+  globalThis.FileReader=function(){ this.readAsText=()=>this.onload({target:{result:${JSON.stringify(JSON.stringify(d))}}}); };
+  loadJSON({target:{files:[{}],value:''}}); return {mode:S.cwSizeMode,rule:S.sizeRule===SIZE_RULE,use:S.bldgUse}`), warn:app.alerts.join('\n')}; };
+
+test('U1 저장본 변환 — 브라우저 저장본·JSON 파일 모두 실제 경로로: 관균등표 → WSFU 와 알림, 유량 구간표는 유지', ()=>{
+  for(const via of [viaStorage,viaFile]){
+    for(const x of [{cwSizeMode:'equiv'},{},{cwSizeMode:'equiv',sizeRule:'CH-20261123-02'}]){   // 옛 저장본 · 더 옛 저장본 · 첫 배포본에서 변환 안 된 저장본
+      const r=via(SAVED(x)); assert.equal(r.mode,'wsfu',JSON.stringify(x)); assert.equal(r.rule,true); assert.match(r.warn,/산정법이 바뀌었습니다/);
+    }
+    const f=via(SAVED({cwSizeMode:'flow'})); assert.equal(f.mode,'flow'); assert.doesNotMatch(f.warn,/산정법/);
+    const w=via(SAVED({cwSizeMode:'wsfu',sizeRule:'CH-20261123-02'})); assert.equal(w.mode,'wsfu'); assert.doesNotMatch(w.warn,/산정법/);
+    // 새 규칙으로 저장한 뒤 사용자가 고른 관균등표는 유지
+    const k=via(SAVED({cwSizeMode:'equiv',sizeRule:load().run('return SIZE_RULE')})); assert.equal(k.mode,'equiv'); assert.doesNotMatch(k.warn,/산정법/);
+  }
+});
+
+test('저장본에 없는 건물 용도는 지금 프로젝트 값을 물려받지 않는다', ()=>{
+  const r=viaFile(SAVED({cwSizeMode:'equiv'}),`S.bldgUse='assembly';`); assert.equal(r.use,'general');
+  const k=viaFile(SAVED({cwSizeMode:'equiv',bldgUse:'multi'}),`S.bldgUse='assembly';`); assert.equal(k.use,'multi');
 });
 
 test('1-2 최대압 — 550 kPa 이면 초과(KDS 4.7 「550 kPa 이상」), 549 는 적합', ()=>{
@@ -240,4 +254,24 @@ test('06 받는 칸 표시와 안내 탭 순서표 — ← 카탈로그(P_op/P_m
 test('구글 로그인 제거 — 로그인 스크립트·관문 없이 앱 화면이 바로 보인다 (2026-11-25 사용자 지시)', ()=>{
   assert.ok(!/accounts\.google\.com|MEPAuth|auth-gate|src="auth\.js/.test(html));
   assert.match(html,/<div id="app-content">/);
+});
+
+test('허용마찰 재사용 — 화장실 40개소에서도 결과 화면 한 번에 한 번만 구하고, 입력을 바꾸면 바로 새 값 (2026-11-25)', ()=>{
+  const app=load();
+  const r=app.run(RESET+`S.pressure.supplyKPa=500;
+    for(let i=0;i<4;i++){ const R={id:'R'+i,name:'R'+i,floorIds:[],zoneIds:[]};
+      for(let f=10;f>=1;f--){ const z=newZone(f+'층'+i,f+'층'); let prev=z.pipe.rootId;
+        for(const k of ['wc_v','ur_v','bas_p']){ const n=newPipeNode('fixture'); n.fxKey=k; n.qty=2; z.pipe.nodes[n.id]=n; z.pipe.nodes[prev].mainNext=n.id; prev=n.id; }
+        S.zones.push(z); const F={id:'F'+i+'_'+f,name:f+'층',zoneIds:[z.id]}; S.cw.floors.push(F); R.floorIds.push(F.id); }
+      S.cw.risers.push(R); S.cw.main.riserIds.push(R.id); }
+    let n=0; const org=allowFrictionCalc; allowFrictionCalc=()=>{ n++; return org(); };
+    renderResult(); const a=n; n=0; renderPressureTab(); const b=n;
+    const s1=allowFriction().s, p1=calcMainType('cw').cwPipe;
+    S.pressure.supplyKPa=400; const s2=allowFriction().s, p2=calcMainType('cw').cwPipe;
+    S.pressure.supplyKPa=500; const p3=calcMainType('cw').cwPipe;
+    let depth; try{ calcZone(null); }catch(e){ depth=_afDepth; }
+    allowFrictionCalc=org; return {a,b,s1,s2,p1,p2,p3,depth}`);
+  assert.equal(r.a,1); assert.equal(r.b,1);
+  assert.ok(r.s2<r.s1); assert.ok(r.p2>=r.p1); assert.equal(r.p3,r.p1);
+  assert.equal(r.depth,0);   // 오류가 나도 재사용 범위가 닫힌다
 });
