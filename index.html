@@ -472,8 +472,9 @@ function allowFrictionCalc(){
     if(!need) continue;
     const n=floorNum(fl?fl.name:(z.floor||z.name));
     const elevM=(n==null)?(isTop?-fh:(nFloors-1)*fh):(n-src)*fh;
-    // ⚠ 감압(PRV) 2차압은 보지 않는다 — 「감압은 관경을 바꾸지 않는다」(밸브 명세 7.5, 2026-10-20 확정). PRV 뒤 화장실은 허용마찰이
-    //   크게 잡혀 관경이 작게 나올 수 있다 → 바꿀지는 사용자 결정 대기 (2026-11-26 보고)
+    // 감압(PRV) 2차압은 보지 않는다 — 2026-11-26 사용자 확정(현행 유지): ① 유량은 감압과 무관하게 기구 수·동시사용으로
+    //   ② 그 유량으로 관경 선정(감압으로 최초 관경을 바꾸지 않음, 밸브 명세 7.5) ③ 감압 후 압력으로 말단 잔압 검증(applyPrvZone)
+    //   ④ 부족하면 PRV 뒤 구간만 관경 상향(solvePressureUpsize)·루트 단축·설정압 조정(prvAdvice 범위).
     const H=sup-elevLossKPa(elevM);
     const L=(+P.mainLen||0)+Math.abs(elevM), l=hOf(ri||S.cw.main);
     const s=(H-need)/(K*(L+l));
