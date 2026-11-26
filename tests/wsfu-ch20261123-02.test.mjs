@@ -236,7 +236,9 @@ test('CH-20261124-05 — 「옮겨 적을 값 → 용량계산서 부스터」 �
   const r=app.run(RESET+TOWER+`S.pressure.supplyKPa=360; renderPressureTab(); const p=document.getElementById('pressurePane').innerHTML;
     renderResult(); const m=document.getElementById('resultPanel').innerHTML; return {p,m,f:typeof xferBox+typeof pumpHead}`);
   assert.equal(r.f,'undefinedundefined');
-  for(const h of [r.p,r.m]){ assert.ok(!h.includes('옮겨 적을 값')); assert.ok(!/(AC|WS|DR|HW)-0\d\d/.test(h)); }
+  for(const h of [r.p,r.m]){ assert.ok(!h.includes('설계 유량 Q')); assert.ok(!/(AC|WS|DR|HW)-0\d\d/.test(h)); }
+  // 2026-11-26 — 압력검토에는 H1·H3·H5 상자(사용자 요청)만, 메인관 결과에는 없음
+  assert.ok(r.p.includes('H₁ 관경 앱 마찰손실')); assert.ok(!r.m.includes('옮겨 적을 값'));
 });
 
 test('06 받는 칸 표시와 안내 탭 순서표 — ← 카탈로그(P_op/P_max), 이 앱 단계 ①·⑤ 굵게', ()=>{
@@ -246,7 +248,7 @@ test('06 받는 칸 표시와 안내 탭 순서표 — ← 카탈로그(P_op/P_m
     renderHelp(); const h=document.getElementById('helpPanel').innerHTML; return {p,h}`);
   assert.ok(r.p.includes('← 카탈로그(P_op)')); assert.ok(r.p.includes('← 카탈로그(P_max)'));
   assert.ok(r.p.includes('kgf/cm²'));
-  assert.ok(r.h.includes('위생배관: 관경·압력검토')); assert.ok(!r.h.includes('Q 순간최대유량, H 필요 양정'));
+  assert.ok(r.h.includes('H₁·H₃·H₅ (용량부하 수두 계산)')); assert.ok(r.h.includes('감압 여부·존·2차 설정압')); assert.ok(!r.h.includes('Q 순간최대유량, H 필요 양정'));
   assert.ok(r.h.includes('1.1 저수조·급수펌프')); assert.ok(r.h.includes('1.2 덕트 정압'));
   assert.equal((r.h.match(/font-weight:700;background:rgba\(59,130,246,\.10\)/g)||[]).length,2);
 });
@@ -274,4 +276,99 @@ test('허용마찰 재사용 — 화장실 40개소에서도 결과 화면 한 �
   assert.equal(r.a,1); assert.equal(r.b,1);
   assert.ok(r.s2<r.s1); assert.ok(r.p2>=r.p1); assert.equal(r.p3,r.p1);
   assert.equal(r.depth,0);   // 오류가 나도 재사용 범위가 닫힌다
+});
+
+// ── 2026-11-26 대기 목록 일괄 반영 ──────────────────────────────────────────────
+// 사용자 프로젝트와 같은 꼴: 펌프 B1, 층고 3.9, A입상(4·1층)·B입상(3·2층), P_op 620 · P_max 735
+const B1=`S.pressure.supplyKPa=620; S.maxPressureKPa=735; S.pressure.floorH=3.9; S.pressure.pumpFloor='B1';
+  const mk=(f)=>{ const z=newZone(f+'층 화장실',f+'층'); let p=z.pipe.rootId; for(const [k,q] of [['wc_v',8],['ur_v',4],['bas_p',4]]){ const x=newPipeNode('fixture'); x.fxKey=k; x.qty=q; z.pipe.nodes[x.id]=x; z.pipe.nodes[p].mainNext=x.id; p=x.id; } S.zones.push(z); return z.id; };
+  S.cw.floors=[4,3,2,1].map(f=>({id:'F'+f,name:f+'층',zoneIds:[mk(f)]}));
+  S.cw.risers=[{id:'A',name:'A입상',floorIds:['F4','F1'],zoneIds:[],hLen:20},{id:'B',name:'B입상',floorIds:['F3','F2'],zoneIds:[],hLen:20}];
+  S.cw.main.riserIds=['A','B'];`;
+
+test('1·2 연결 탭 — 층별·입상관 설정 카드를 한 줄에 2개씩 (급수·오배수)', ()=>{
+  const app=load();
+  const r=app.run(RESET+B1+`copyCwToDr(); renderCWTab(); renderDRTab(); return [document.getElementById('cwMain').innerHTML, document.getElementById('drMain').innerHTML]`);
+  for(const h of r) assert.equal((h.match(/class="card-grid2"/g)||[]).length,2);
+  assert.match(html,/\.card-grid2\{display:grid;grid-template-columns:repeat\(2,/);
+  assert.ok(r[1].includes('급수/급탕 연결과 동일')); assert.ok(!r[0].includes('급수/급탕 연결과 동일'));
+});
+
+test('3 「급수/급탕 연결과 동일」 — 층·입상관·MAIN 배정을 새 id 로 복사, 오배수 MAIN 합계에 전부 들어감', ()=>{
+  const app=load();
+  const r=app.run(RESET+B1+`S.dr.floors=[{id:'X',name:'옛',zoneIds:[]}]; copyCwToDr();
+    const d=S.dr, c=S.cw, dm=calcMainType('dr');
+    const tot=S.zones.reduce((t,z)=>t+calcZone(z).sewDFU,0);
+    return {names:d.floors.map(f=>f.name), rf:d.risers.map(r=>r.floorIds.map(id=>d.floors.find(f=>f.id===id).name)),
+      newIds:d.floors.every(f=>!c.floors.some(x=>x.id===f.id))&&d.risers.every(r=>!c.risers.some(x=>x.id===r.id)),
+      mainR:d.main.riserIds.length, sew:dm.sewDFU, tot, hLen:d.risers.some(r=>'hLen' in r)}`);
+  assert.deepEqual(r.names,['4층','3층','2층','1층']); assert.deepEqual(r.rf,[['4층','1층'],['3층','2층']]);
+  assert.equal(r.newIds,true); assert.equal(r.mainR,2); assert.equal(r.sew,r.tot); assert.equal(r.hLen,false);
+});
+
+test('4 급탕 열원 — 「개별식 온수기」를 고르면 local 로 저장되고 급수 WSFU 전량', ()=>{
+  const app=load();
+  const r=app.run(RESET+ZONE('A','1층',[['bas_p',4]])+`const z=S.zones[0]; activeZone=z.id; setZoneHwSource(z.id,'local'); const a=[z.hwSource,z.elecHW,calcZone(z).wsCw];
+    setZoneHwSource(z.id,'elec'); return {a, b:z.hwSource}`);
+  assert.deepEqual(r.a,['local',true,4]); assert.equal(r.b,'local');
+  assert.ok(html.includes(`<option value="local"\${zone.hwSource==='local'?' selected':''}>개별식 온수기`));
+  assert.ok(!html.includes('<option value="elec"'));
+});
+
+test('8-1 감압 판단 — 값을 넣기 전에도 칸별 필요 여부·하한·상한, 가장 낮은 기구 기준 최대압', ()=>{
+  const app=load();
+  const r=app.run(RESET+B1+`const ps=calcAllPressurePaths('cw'); const a=prvAdvice(ps); const zs=zoneSplitCheck(ps);
+    const p=id=>ps.find(x=>x.ids.f===id); return {a, lo:zs.lo, byPath:zs.byPath, n4:p('F4').maxNoPrv,
+      d4:p('F4').segments.slice(1).reduce((t,g)=>t+g.friction+g.elev,0)}`);
+  assert.equal(r.byPath,true); assert.ok(Math.abs(r.lo-(735-3.9*9.81))<1e-6);   // 펌프 B1, 가장 낮은 기구 1층 → 697
+  const A=r.a['r:A'], F1=r.a['f:F1'], F4=r.a['f:F4'];
+  assert.equal(A.required,true); assert.ok(Math.abs(A.need-(100+r.d4))<1e-6);   // A입상 하한 = 4층 필요압 + PRV 뒤 손실
+  assert.ok(Math.abs(A.upper-(550+3.9*9.81))<1e-6);                              // 상한 = 550 + 1층까지 높이
+  assert.equal(F1.required,true); assert.equal(F1.upper,550); assert.equal(F4.required,true);
+  assert.ok(Math.abs(r.n4-(735-4*3.9*9.81))<1e-6);   // B1 = 0층 → 4층 = 4개 층 높이
+  const none=app.run(RESET+B1.replace('S.pressure.supplyKPa=620; S.maxPressureKPa=735;','S.pressure.supplyKPa=null; S.maxPressureKPa=0;')+`return prvAdvice(calcAllPressurePaths('cw'))['r:A']`);
+  assert.equal(none.known,false); assert.ok(none.need>0);
+  const h=app.run(`renderPressureTab(); return document.getElementById('pressurePane').innerHTML`);
+  assert.match(h,/P_op·P_max 를 넣으면 감압 필요 여부가 나옵니다/);
+});
+
+test('8-1 감압을 넣으면 판정 카드가 「감압 뒤」로 통과, 감압 필요 층 표시, 낡은 「결정 대기」 문구 없음', ()=>{
+  const app=load();
+  const r=app.run(RESET+B1+`renderPressureTab(); const a=document.getElementById('pressurePane').innerHTML;
+    const adv=prvAdvice(calcAllPressurePaths('cw')); S.cw.risers.forEach(x=>x.prvKPa=Math.ceil(Math.max(adv['r:A'].need,adv['r:B'].need))+10);
+    renderPressureTab(); const b=document.getElementById('pressurePane').innerHTML; return {a,b}`);
+  assert.match(r.a,/감압 필요: 4층 · 3층 · 2층 · 1층/); assert.match(r.a,/넣을 범위 <b>\d+ 이상 · \d+ 이하<\/b> kPa/);
+  assert.match(r.b,/감압을 넣어 두 조건을 만족합니다/);
+  for(const h of [r.a,r.b]){ assert.doesNotMatch(h,/결정 대기|미결정/); assert.doesNotMatch(h,/294 kPa/); }
+});
+
+test('6 H₁·H₃·H₅ 상자 — 마찰 최대 경로·필요압·높이, 공급압 없어도 보임, 관균등표면 경고', ()=>{
+  const app=load();
+  const r=app.run(RESET+B1+`const ps=calcAllPressurePaths('cw'); const fr=p=>p.segments.reduce((t,g)=>t+g.friction,0);
+    const w=ps.reduce((a,p)=>fr(p)>fr(a)?p:a,ps[0]); renderPressureTab(); return {h:document.getElementById('pressurePane').innerHTML, f:fr(w), label:w.label}`);
+  assert.ok(r.h.includes('▶ 옮겨 적을 값 — 용량계산서(hvac-calc) › 부스터펌프 탭 › 수두 계산'));
+  assert.ok(r.h.includes(`>${(r.f/9.81).toFixed(1)}<`)); assert.ok(r.h.includes(r.label));
+  assert.ok(r.h.includes('>10.2<'));                                    // H3 = 100 kPa
+  assert.ok(r.h.includes(`>${(4*3.9).toFixed(1)} + 기구 높이<`));       // H5 = B1(0층) → 4층 = 4 × 3.9 = 15.6 m
+  assert.ok(!r.h.includes('관균등표)의 마찰은'));
+  const n=app.run(RESET+B1+`S.pressure.supplyKPa=null; S.cwSizeMode='equiv'; renderPressureTab(); return document.getElementById('pressurePane').innerHTML`);
+  assert.ok(n.includes('H₁ 관경 앱 마찰손실')); assert.ok(n.includes('관균등표)의 마찰은'));
+  const d=app.run(RESET+B1+`S.supplyType='direct'; renderPressureTab(); return document.getElementById('pressurePane').innerHTML`);
+  assert.ok(d.includes('수도직결식 — 펌프가 없어'));
+});
+
+test('5 압력 탭 안내 — 입력 순서와 칸마다 무엇을 어디서', ()=>{
+  const app=load();
+  const h=app.run(RESET+B1+`renderPressureTab(); return document.getElementById('pressurePane').innerHTML`);
+  for(const t of ['입력 순서','카탈로그 곡선에서 설계 유량일 때의 압력','유량 0 일 때의 압력','펌프 토출 헤더','직관 길이만','두 앱 모두 자동으로 정하지 않습니다','밸브 앱 감압밸브 설정압'])
+    assert.ok(h.includes(t),t);
+});
+
+test('8-2·8-3 밸브 앱으로 넘기는 결과 — 층 번호·층의 화장실, MAIN 관경 안내', ()=>{
+  const app=load();
+  const r=app.run(RESET+B1+`renderResult(); return {x:exportResults(), m:document.getElementById('resultPanel').innerHTML}`);
+  assert.equal(r.x.ruleVersion,'SAN-2026-11-26');
+  const fA=r.x.cw.risers[0].floors; assert.deepEqual(fA.map(f=>f.floorNo),[4,1]);
+  assert.equal(fA[0].zoneIds.length,1); assert.equal(fA[0].zoneIds[0],r.x.cw.risers[0].zones[0].id);
+  assert.ok(r.m.includes('펌프 흡입·토출·저수조 출구'));
 });

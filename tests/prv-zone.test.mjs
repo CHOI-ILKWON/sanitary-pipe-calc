@@ -121,6 +121,6 @@ test('화면 렌더 — PRV 입력칸·리셋 행·유량 0 최대압·두 기�
   const h=app.els.pressurePane.innerHTML;
   assert.match(h,/PRV 존 — 2차 설정압/);
   assert.match(h,/유량 0 최대/);
-  assert.match(h,/294 kPa/);                 // 적정압 3.0 kgf/cm² 참고 병기
+  assert.match(h,/넣을 범위|범위 없음/);   // 2026-11-26 — 3.0 kgf/cm² 참고 문구 대신 칸별 하한·상한 (밸브 명세 7.5-7)
   assert.match(h,/PRV 존 적용 후 기구 최대압력/);
 });
