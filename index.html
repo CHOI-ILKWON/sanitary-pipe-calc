@@ -176,8 +176,27 @@ select:focus{outline:none;border-color:var(--accent)}
 </head>
 <body>
 
-<!-- 2026-11-25 사용자 지시 — 구글 로그인(auth.js) 제거. 주소로 바로 접속한다 -->
-<div id="app-content">
+<!-- 2026-11-27 유료화 (웹앱_유료화_기준.md, CH-20261127-02) — 구글 로그인 → 7일 무료(+피드백 7일) → 앱별 평생이용권 -->
+<div id="auth-gate"></div>
+
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="auth.js?v=5"></script>
+<script>
+  // ====== 판매 설정 (기존 관리 시트를 네 앱이 같이 쓴다 — apps-script/README.md) ======
+  MEPAuth.init({
+    clientId:  "631559035777-ara2uhplj7ds41ehfrr97cef8jlj4rip.apps.googleusercontent.com",
+    apiUrl:    "https://script.google.com/macros/s/AKfycbzOwmnJdBeqkH4QMdbQRagHXFnOA7sXnkQDmGeerVi4mYUF9WL_vB3C8LIq1-AZekQX/exec",
+    appId:     "sanitary",              // 라이선스 시트의 「앱」 칸 값
+    appName:   "위생배관 관경 산정 프로그램",
+    trialDays: 7, bonusDays: 7,         // 백엔드 CONFIG.TRIAL_DAYS · TRIAL_BONUS_DAYS 와 같게
+    priceSingle: 40000,                 // 앱별 평생이용권
+    priceBundle: 0,                     // 전 앱 팩 — 0 이면 표시하지 않음
+    bankInfo:  "카카오뱅크 3333-07-0554442 (최일권)"
+  });
+  // ================================================================================
+</script>
+
+<div id="app-content" style="display:none;">
 
 <header>
   <span class="logo">⊞ 위생배관 관경 계산서</span>

@@ -1,5 +1,9 @@
 /**
- * MEP Works 공통 인증 모듈
+ * MEP Works 공통 인증 모듈 — v5 (2026-11-27 유료화, 웹앱_유료화_기준.md · CH-20261127-02)
+ *   · 처음 로그인하면 체험을 바로 발급한다(「무료로 시작」 버튼 없음) — 그날부터 7일
+ *   · 앱 안 「피드백」(고객 시트 항목)을 내면 그 앱 체험 7일 연장(앱마다 1회)
+ *   · 체험 중 배너 「무료 체험 n일 남음 · 피드백 내면 7일 연장」, 만료되면 계산 화면 대신 결제 안내
+ *   · 앱별 평생이용권(priceSingle) — 계좌이체 후 「평생이용권 신청」 → 판매자가 입금 확인 후 정식 전환
  *
  * 다른 앱에 붙일 때는 이 파일을 복사하고, index.html 에서
  *   <script src="auth.js?v=1"></script>
@@ -36,8 +40,9 @@ window.MEPAuth = (function () {
       appId: 'sanitary',
       appName: '앱',
       trialDays: 7,
-      priceSingle: 100000,
-      priceBundle: 199000,
+      bonusDays: 7,            // 피드백 연장 일수 (백엔드 TRIAL_BONUS_DAYS 와 같게)
+      priceSingle: 40000,      // 앱별 평생이용권
+      priceBundle: 0,          // 0 이면 전 앱 팩을 보이지 않는다
       bankInfo: '',            // 예: '카카오뱅크 3333-00-0000000 (홍길동)'
       gateId: 'auth-gate',
       contentId: 'app-content',
@@ -109,7 +114,19 @@ window.MEPAuth = (function () {
   function route() {
     if (state.approved) return enterApp();
     if (state.status === 'expired') return renderGate('expired');
-    return renderGate('trial-offer');
+    return startTrial();   // 2026-11-27 — 처음 보는 사람은 버튼 없이 바로 체험 발급
+  }
+
+  /** 다시 확인 — 입금·피드백 뒤 새로고침 없이 권한을 다시 읽는다. */
+  function recheck() {
+    setStatus('다시 확인 중…');
+    api('check', {}).then(function (data) { state = normalize(data); route(); })
+      .catch(function (err) { renderGate('error', { message: err.message }); });
+  }
+
+  function switchAccount() {
+    try { google.accounts.id.disableAutoSelect(); } catch (e) { /* 무시 */ }
+    location.reload();
   }
 
   function enterApp() {
@@ -121,7 +138,7 @@ window.MEPAuth = (function () {
     renderBanner();
 
     // 체험자에게 프로필을 아직 안 받았으면 한 번 권한다 (강제하지 않는다)
-    if (state.status === 'trial' && state.profileDone === false) {
+    if (state.status === 'trial' && state.feedbackDone === false) {
       setTimeout(function () { openProfile(true); }, 1200);
     }
 
@@ -184,10 +201,10 @@ window.MEPAuth = (function () {
       html =
         '<h2 class="mep-h2">' + esc(cfg.appName) + '</h2>' +
         '<p class="mep-sub">구글 계정으로 로그인하면 바로 시작합니다.<br>' +
-        '처음이신 분은 <b>' + cfg.trialDays + '일 무료</b>로 전 기능을 쓰실 수 있습니다.</p>' +
+        '처음 로그인한 날부터 <b>' + cfg.trialDays + '일 무료</b>, 피드백을 보내 주시면 <b>' + cfg.bonusDays + '일 더</b> 쓰실 수 있습니다.</p>' +
         '<div id="mep-signin-btn" class="mep-center"></div>' +
         '<p class="mep-status" id="mep-status"></p>' +
-        '<p class="mep-fine">계산 결과는 브라우저에만 저장되며 서버로 전송되지 않습니다.</p>';
+        '<p class="mep-fine">체험 뒤에는 앱별 평생이용권(' + won(cfg.priceSingle) + '원)으로 계속 쓰실 수 있습니다. 계산 결과는 브라우저에만 저장되며 서버로 전송되지 않습니다.</p>';
     }
 
     else if (mode === 'trial-offer') {
@@ -206,11 +223,16 @@ window.MEPAuth = (function () {
 
     else if (mode === 'expired') {
       html =
-        '<h2 class="mep-h2">체험 기간이 끝났습니다</h2>' +
+        '<h2 class="mep-h2">무료 체험이 끝났습니다</h2>' +
         '<p class="mep-sub">그동안 입력하신 프로젝트 데이터는 <b>이 브라우저에 그대로 남아 있습니다.</b><br>' +
-        '정식 이용으로 전환하시면 이어서 사용하실 수 있습니다.</p>' +
-        '<button class="mep-btn mep-btn-primary" onclick="MEPAuth.openPurchase()">정식 이용 신청하기</button>' +
-        '<p class="mep-fine">' + esc(email) + ' 로 로그인되어 있습니다.</p>';
+        '평생이용권(<b>' + won((state && state.price) || cfg.priceSingle) + '원</b>, 이 앱 하나)을 결제하시면 이어서 쓰실 수 있습니다.</p>' +
+        (state && state.payPending ? '<p class="mep-notice">평생이용권 신청이 접수되어 <b>입금을 확인하고 있습니다.</b> 확인되면 「다시 확인」을 누르거나 다시 접속하시면 열립니다.</p>' : '') +
+        '<div style="display:flex;flex-direction:column;gap:8px;align-items:center">' +
+        '<button class="mep-btn mep-btn-primary" onclick="MEPAuth.openPurchase()">평생이용권 결제 안내 · 신청</button>' +
+        (state && state.feedbackDone === false
+          ? '<button class="mep-btn" onclick="MEPAuth.openProfile()">피드백 보내고 ' + cfg.bonusDays + '일 더 쓰기</button>' : '') +
+        '<button class="mep-btn" onclick="MEPAuth.recheck()">다시 확인</button></div>' +
+        '<p class="mep-fine">' + esc(email) + ' 로 로그인되어 있습니다 · <a href="#" onclick="MEPAuth.switchAccount();return false">다른 계정으로</a></p>';
     }
 
     else if (mode === 'error') {
@@ -249,12 +271,11 @@ window.MEPAuth = (function () {
     bar.id = 'mep-banner';
     bar.className = 'mep-banner' + (urgent ? ' mep-banner-urgent' : '');
     bar.innerHTML =
-      '<span>무료 체험 <b>' + (d == null ? '진행 중' : '잔여 ' + d + '일') + '</b></span>' +
-      (state.profileDone === false
-        ? '<button class="mep-chip" onclick="MEPAuth.openProfile()">정보 입력하고 ' +
-          (state.bonusDays || 7) + '일 연장</button>'
-        : '') +
-      '<button class="mep-chip mep-chip-solid" onclick="MEPAuth.openPurchase()">정식 이용 신청</button>';
+      '<span>무료 체험 <b>' + (d == null ? '진행 중' : d + '일 남음') + '</b>' + (state.expires ? ' (' + esc(state.expires) + '까지)' : '') + '</span>' +
+      (state.feedbackDone
+        ? '<span style="font-size:12px;color:#047857">피드백 연장 적용됨</span>'
+        : '<button class="mep-chip" onclick="MEPAuth.openProfile()">피드백 내면 ' + (state.bonusDays || cfg.bonusDays) + '일 연장</button>') +
+      '<button class="mep-chip mep-chip-solid" onclick="MEPAuth.openPurchase()">평생이용권 결제 안내</button>';
     document.body.insertBefore(bar, document.body.firstChild);
   }
 
@@ -263,11 +284,11 @@ window.MEPAuth = (function () {
   // ═══════════════════════════════════════════════════
 
   function openProfile(auto) {
-    var bonus = (state && state.bonusDays) || 7;
+    var bonus = (state && state.bonusDays) || cfg.bonusDays || 7;
     modal(
-      (auto ? '잠깐만요 — 체험을 ' + bonus + '일 늘려드립니다' : '이용자 정보'),
-      '<p class="mep-sub" style="text-align:left">아래를 채워주시면 체험 기간이 <b>' + bonus + '일 연장</b>됩니다.<br>' +
-      '어떤 실무에서 쓰이는지 알면 다음 기능을 더 잘 만들 수 있습니다.</p>' +
+      (auto ? '피드백을 주시면 체험을 ' + bonus + '일 늘려드립니다' : '피드백 — 체험 ' + bonus + '일 연장'),
+      '<p class="mep-sub" style="text-align:left">아래를 채워주시면 이 앱 체험이 <b>' + bonus + '일 연장</b>됩니다(앱마다 1회).<br>' +
+      '보내 주신 내용은 앱을 고치는 데 씁니다.</p>' +
       '<div class="mep-form">' +
       row('회사 / 소속', '<input id="mep-f-company" class="mep-in" placeholder="○○엔지니어링">') +
       row('경력', '<select id="mep-f-years" class="mep-in">' +
@@ -288,7 +309,7 @@ window.MEPAuth = (function () {
       '<span>새 기능·신규 앱 소식을 메일로 받겠습니다 <i>(선택, 언제든 해지 가능)</i></span></label>',
       [
         { label: '건너뛰기', cls: '', act: closeModal },
-        { label: '저장하고 ' + bonus + '일 연장', cls: 'mep-btn-primary', act: submitProfile }
+        { label: '보내고 ' + bonus + '일 연장', cls: 'mep-btn-primary', act: submitProfile }
       ]
     );
   }
@@ -309,7 +330,7 @@ window.MEPAuth = (function () {
     api('profile', payload).then(function (data) {
       state = normalize(data);
       closeModal();
-      renderBanner();
+      if (state.approved) enterApp(); else renderGate(state.status === 'expired' ? 'expired' : 'error', { message: data.message || '' });   // 만료 화면에서 연장되면 바로 들어간다
       track('profile_submit', { app_id: cfg.appId, extended_days: data.extendedDays || 0 });
       toast(data.extendedDays > 0
         ? '감사합니다. 체험이 ' + data.extendedDays + '일 연장되었습니다.'
@@ -339,7 +360,8 @@ window.MEPAuth = (function () {
         '</div>'
       : '';   // 요금제 선택이 없으면 submitPurchase 의 기본값 'single' 이 그대로 쓰인다
 
-    modal('정식 이용 신청',
+    modal('평생이용권 결제 안내',
+      '<p class="mep-sub" style="text-align:left"><b>' + esc(cfg.appName) + '</b> 평생이용권 — 이 앱 하나의 값입니다(다른 앱은 따로). 아래 계좌로 입금한 뒤 입금자명을 적고 「입금했습니다」를 누르세요.</p>' +
       plansHtml +
       '<div class="mep-bank">' +
       '<div class="mep-bank-row"><span>입금 계좌</span>' +
@@ -390,6 +412,7 @@ window.MEPAuth = (function () {
       // 나중에 사업자 등록을 하면 체크박스를 되살리고 이 값을 다시 보내면 된다.
     }).then(function () {
       closeModal();
+      if (state) { state.payPending = true; if (!state.approved) renderGate('expired'); }
       track('purchase_request', {
         app_id: cfg.appId,
         plan: plan,
@@ -626,6 +649,8 @@ window.MEPAuth = (function () {
 
   return {
     init: init,
+    recheck: recheck,
+    switchAccount: switchAccount,
     openProfile: openProfile,
     openPurchase: openPurchase,
     copyAccount: copyAccount,

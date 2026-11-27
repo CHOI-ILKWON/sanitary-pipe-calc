@@ -11,8 +11,8 @@
 | 파일 | 내용 |
 |---|---|
 | `index.html` | 앱 전체 (약 2,700행). 계산·UI·계통도·엑셀 내보내기가 한 파일에 있다 |
-| `auth.js` | 공통 인증 모듈 (`window.MEPAuth`). **이 앱은 2026-11-25부터 쓰지 않는다** (로그인 없이 주소로 접속). 다시 쓸 수 있으니 지우지 않는다 |
-| `apps-script/` | 라이선스 백엔드 (Google Apps Script). 이 앱은 2026-11-25부터 호출하지 않는다 |
+| `auth.js` | 공통 인증 모듈 (`window.MEPAuth`) v5 — 구글 로그인·7일 체험·결제 안내. 네 앱이 복사해 쓴다 |
+| `apps-script/` | 라이선스 백엔드 (Google Apps Script). 판매자가 자기 구글 계정에 배포한다 — 순서는 `apps-script/README.md` |
 
 빌드 도구·프레임워크·패키지 의존성이 **없다.** 바닐라 JS 단일 파일이 의도된 설계다
 (현장 PC에서 파일 하나로 열려야 한다). 번들러나 npm 의존성을 도입하지 말 것.
@@ -90,6 +90,6 @@ Fix: 샤워기(shw)를 배수관경 계산에서 제외
 
 `main` 에 push 하면 Cloudflare Pages 가 자동 배포한다. 별도 빌드 단계 없음.
 
-(다시 쓸 때) `auth.js` 의 Apps Script 호출은 **POST + `Content-Type: text/plain`** 이다.
+`auth.js` 의 Apps Script 호출은 **POST + `Content-Type: text/plain`** 이다.
 Apps Script 가 OPTIONS 프리플라이트를 처리하지 못해 `application/json` 으로 보내면
 CORS 로 차단된다. 이 헤더를 바꾸지 말 것.

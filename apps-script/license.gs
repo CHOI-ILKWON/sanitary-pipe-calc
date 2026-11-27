@@ -22,6 +22,12 @@
  *  만료일이 비어 있으면 무기한이다.
  *  입금을 확인하면 라이선스 시트에서 유형을 paid 로 바꾸고 만료일을 비우면 된다.
  *
+ * ── 2026-11-27 유료화 (웹앱_유료화_기준.md, CH-20261127-02) — 기존 관리 시트를 네 앱이 같이 쓴다 ──
+ *  · 앱별 평생이용권 40,000원. 구글 로그인 첫날부터 7일 무료 — 앱(auth.js v5)이 처음 보는 사람에게 「trial」 을 바로 요청한다(버튼 없음)
+ *  · 피드백 연장: 앱 안 「피드백」 입력(고객 시트 항목) → 그 앱 체험 7일 연장, **앱마다 1회**(라이선스 줄 메모 「피드백연장」)
+ *  · 결제: 앱 안 「평생이용권 신청」 → 구매신청 시트(입금대기) → 판매자가 입금 확인 후 라이선스 줄 유형 paid · 만료일 비움
+ *  · 수동 등록(기존 유료 사용자): 라이선스 시트에 이메일 · 앱 · paid 줄을 넣는다(앱 all = 전 앱). 기존 줄은 그대로 유효
+ *
  * 기존 구글폼 응답 시트는 읽기만 한다(첫 실행 때 기존 구매자를 정식으로 1회 이관).
  * 절대 수정·삭제하지 않는다.
  */
@@ -48,7 +54,10 @@ const CONFIG = {
   TRIAL_BONUS_DAYS: 7,
 
   // 체험을 허용할 앱 목록. 여기 없는 앱 이름으로는 체험이 발급되지 않는다.
-  TRIAL_APPS: ['sanitary', 'valve', 'fire', 'hvac'],
+  TRIAL_APPS: ['sanitary', 'valve', 'fire', 'hvac', 'duct'],
+
+  // 2026-11-27 — 앱별 평생이용권 가격(원). 구매신청 알림·응답에 쓴다
+  PRICE: 40000,
 
   // 기존 승인자를 이관할 때 줄 권한. 좁게 주고 필요한 사람만 올리는 게 안전하다.
   //   'sanitary' = 실제로 구매한 앱만 (권장)
@@ -129,7 +138,7 @@ function handle(p) {
 
     if (action === 'ping') {
       // version 은 배포가 실제로 갱신됐는지 밖에서 확인하는 용도다. 코드를 고치면 같이 올린다.
-      return json({ ok: true, version: '1.4', trialDays: CONFIG.TRIAL_DAYS, now: new Date().toISOString() });
+      return json({ ok: true, version: '1.5', trialDays: CONFIG.TRIAL_DAYS, bonusDays: CONFIG.TRIAL_BONUS_DAYS, price: CONFIG.PRICE, now: new Date().toISOString() });
     }
 
     // 구독 신청은 로그인이 없다 — 무료 앱에서 이메일만 받는다.
@@ -164,7 +173,7 @@ function handle(p) {
     var appId = normalizeAppId_(p.appId);
 
     switch (action) {
-      case 'check':    return json(checkAccess_(email, appId));
+      case 'check':    return json(withExtras_(checkAccess_(email, appId), email, appId));
       case 'trial':    return json(startTrial_(email, appId, p));
       case 'profile':  return json(saveProfile_(email, appId, p));
       case 'purchase': return json(requestPurchase_(email, p));
@@ -245,7 +254,7 @@ function checkAccess_(email, appId) {
       app: r.app,
       expires: r.expires,
       expired: expired,
-      daysLeft: r.expires ? daysBetween_(today, r.expires) : null,
+      daysLeft: r.expires ? daysBetween_(today, r.expires) + 1 : null,   // 오늘 포함 남은 날 (만료일까지 쓴다)
       score: (r.type === 'paid' ? 2000 : 1000) - (expired ? 5000 : 0) + (r.expires ? daysBetween_(today, r.expires) : 999)
     };
     if (!best || cand.score > best.score) best = cand;
@@ -279,6 +288,40 @@ function checkAccess_(email, appId) {
   };
 }
 
+// 2026-11-27 — 앱 화면이 쓰는 덧붙임 정보: 이 앱의 피드백 연장 여부 · 입금 대기 중인 구매신청 · 가격
+function withExtras_(res, email, appId) {
+  res.feedbackDone = feedbackUsed_(email, appId);
+  res.bonusDays = CONFIG.TRIAL_BONUS_DAYS;
+  res.price = CONFIG.PRICE;
+  if (!res.approved || res.status === 'trial') res.payPending = purchasePending_(email, appId);
+  return res;
+}
+
+/** 이 앱 체험에 피드백 연장을 이미 썼는지 — 라이선스 줄 메모(「피드백연장」, 종전 「프로필연장」)로 본다. */
+function feedbackUsed_(email, appId) {
+  var values = sheet_(SHEETS.LICENSE).getDataRange().getValues();
+  for (var i = 1; i < values.length; i++) {
+    if (String(values[i][0]).trim().toLowerCase() !== email) continue;
+    if (String(values[i][1]).trim().toLowerCase() !== appId) continue;
+    if (/피드백연장|프로필연장/.test(String(values[i][5] || ''))) return true;
+  }
+  return false;
+}
+
+/** 이 앱(또는 all)을 신청하고 아직 처리되지 않은(입금대기) 구매신청이 있는지. */
+function purchasePending_(email, appId) {
+  var sh = sheet_(SHEETS.ORDER);
+  if (!sh) return false;
+  var values = sh.getDataRange().getValues();
+  for (var i = 1; i < values.length; i++) {
+    if (String(values[i][1]).trim().toLowerCase() !== email) continue;
+    var apps = String(values[i][2] || '').toLowerCase();
+    if (apps.indexOf(appId) < 0 && apps.indexOf('all') < 0) continue;
+    if (String(values[i][7] || '').trim() === '입금대기') return true;
+  }
+  return false;
+}
+
 // ═══════════════════════════════════════════════════════════
 //  체험 발급
 // ═══════════════════════════════════════════════════════════
@@ -305,7 +348,7 @@ function startTrial_(email, appId, p) {
     }
 
     var today = startOfToday_();
-    var expires = addDays_(today, CONFIG.TRIAL_DAYS);
+    var expires = addDays_(today, CONFIG.TRIAL_DAYS - 1);   // 2026-11-27 — 첫날 포함 7일 (종전 +7 은 8일이었다). 만료일까지 쓴다
     var memo = [];
     if (p.channel) memo.push('유입:' + String(p.channel).slice(0, 40));
     if (p.ref)     memo.push('ref:' + String(p.ref).slice(0, 60));
@@ -343,7 +386,8 @@ function saveProfile_(email, appId, p) {
       if (String(values[i][0]).trim().toLowerCase() === email) { rowIndex = i + 1; break; }
     }
 
-    var alreadyBonused = rowIndex > 0 ? String(values[rowIndex - 1][C.BONUS]).toUpperCase() === 'Y' : false;
+    // 2026-11-27 — 피드백 연장은 앱마다 1회 (종전: 계정당 1회, 고객 시트 연장적용 Y)
+    var alreadyBonused = feedbackUsed_(email, appId);
 
     // 수신동의는 반드시 사용자가 직접 체크한 값만 저장한다.
     // 광고성 메일은 사전 동의가 없으면 보낼 수 없다(정보통신망법).
@@ -359,7 +403,7 @@ function saveProfile_(email, appId, p) {
       str_(p.painDetail, 500),   // 서술 — 그대로 인용할 수 있는 문장
       str_(p.channel, 60),
       consent,
-      alreadyBonused ? 'Y' : 'N',
+      (alreadyBonused || (rowIndex > 0 && String(values[rowIndex - 1][C.BONUS]).toUpperCase() === 'Y')) ? 'Y' : 'N',
       new Date()
     ];
 
@@ -370,7 +414,7 @@ function saveProfile_(email, appId, p) {
       rowIndex = sh.getLastRow();
     }
 
-    // 체험 연장은 계정당 1회
+    // 체험 연장은 앱마다 1회
     var extended = 0;
     if (!alreadyBonused && CONFIG.TRIAL_BONUS_DAYS > 0) {
       extended = extendTrial_(email, appId, CONFIG.TRIAL_BONUS_DAYS);
@@ -386,7 +430,7 @@ function saveProfile_(email, appId, p) {
       (p.painDetail ? '\n  "' + p.painDetail + '"' : '') +
       '\n수신동의: ' + consent);
 
-    var access = checkAccess_(email, appId);
+    var access = withExtras_(checkAccess_(email, appId), email, appId);
     access.extendedDays = extended;
     return access;
   } finally {
@@ -406,7 +450,7 @@ function extendTrial_(email, appId, days) {
     var exp = toDate_(values[i][4]);
     if (!exp) return 0;                 // 무기한이면 연장할 것이 없다
     sh.getRange(i + 1, 5).setValue(addDays_(exp, days));
-    sh.getRange(i + 1, 6).setValue(String(values[i][5] || '') + ' / 프로필연장+' + days + 'd');
+    sh.getRange(i + 1, 6).setValue(String(values[i][5] || '') + ' / 피드백연장+' + days + 'd');
     return days;
   }
   return 0;

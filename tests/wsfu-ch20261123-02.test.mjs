@@ -253,10 +253,7 @@ test('06 받는 칸 표시와 안내 탭 순서표 — ← 카탈로그(P_op/P_m
   assert.equal((r.h.match(/font-weight:700;background:rgba\(59,130,246,\.10\)/g)||[]).length,2);
 });
 
-test('구글 로그인 제거 — 로그인 스크립트·관문 없이 앱 화면이 바로 보인다 (2026-11-25 사용자 지시)', ()=>{
-  assert.ok(!/accounts\.google\.com|MEPAuth|auth-gate|src="auth\.js/.test(html));
-  assert.match(html,/<div id="app-content">/);
-});
+// 2026-11-25 「구글 로그인 제거」 시험은 2026-11-27 유료화로 tests/paywall.test.mjs 의 index.html 시험으로 바뀌었다
 
 test('허용마찰 재사용 — 화장실 40개소에서도 결과 화면 한 번에 한 번만 구하고, 입력을 바꾸면 바로 새 값 (2026-11-25)', ()=>{
   const app=load();
